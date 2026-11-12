@@ -1,0 +1,6 @@
+{
+  "name": "Jokenpo 2",
+  "description": "Plataforma online competitiva de Jokenpo 2 para as turmas INF e ETM com 6 jogadas estratégicas, elos, skins, rankings e duelos em equipe.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

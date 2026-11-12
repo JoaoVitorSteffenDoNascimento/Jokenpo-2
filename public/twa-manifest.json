@@ -1,0 +1,39 @@
+{
+  "packageId": "br.edu.jokenpo2.arena",
+  "host": "jokenpo-2.vercel.app",
+  "name": "Jokenpo 2",
+  "launcherName": "Jokenpo 2",
+  "display": "standalone",
+  "themeColor": "#0B0F17",
+  "navigationColor": "#0B0F17",
+  "navigationColorDark": "#0B0F17",
+  "navigationDividerColor": "#0B0F17",
+  "navigationDividerColorDark": "#0B0F17",
+  "backgroundColor": "#0B0F17",
+  "enableNotifications": true,
+  "startUrl": "/",
+  "iconUrl": "https://jokenpo-2.vercel.app/pwa-512x512.png",
+  "maskableIconUrl": "https://jokenpo-2.vercel.app/pwa-maskable-512x512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./android.keystore",
+    "alias": "jokenpo2-key"
+  },
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://jokenpo-2.vercel.app/manifest.json",
+  "fallbackType": "customtabs",
+  "features": {},
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://jokenpo-2.vercel.app/",
+  "minSdkVersion": 21,
+  "orientation": "default",
+  "fingerprints": []
+}

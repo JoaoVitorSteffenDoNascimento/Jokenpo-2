@@ -1,0 +1,446 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Core helper primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidNicknameId(id) {
+      return id is string && id.size() >= 3 && id.size() <= 20 && id.matches('^[a-z0-9_.-]+$');
+    }
+
+    function isValidPairId(id) {
+      return id is string && id.size() >= 3 && id.size() <= 260 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    function isValidTurma(turma) {
+      return turma in [
+        'INF1M', 'INF2M', 'INF3M', 'INF4M',
+        'INF1T', 'INF2T', 'INF3T', 'INF4T',
+        'ETM1M', 'ETM2M', 'ETM3M', 'ETM4M',
+        'ETM1T', 'ETM2T', 'ETM3T', 'ETM4T'
+      ];
+    }
+
+    // Entity validation helpers
+    function isValidPlayer(data) {
+      return data.keys().hasAll([
+        'uid', 'nickname', 'nicknameLower', 'turma', 'trophies', 'coins',
+        'wins', 'losses', 'draws', 'lossStreak', 'lastDailyClaimAt',
+        'unlockedSkins', 'equippedSkins', 'createdAt', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'uid', 'nickname', 'nicknameLower', 'turma', 'trophies', 'coins',
+        'wins', 'losses', 'draws', 'lossStreak', 'lastDailyClaimAt',
+        'unlockedSkins', 'equippedSkins', 'characterCustomization',
+        'claimedMilestones', 'proSeasonMonth', 'proSeasonTrophies',
+        'createdAt', 'updatedAt'
+      ])
+      && data.uid is string && isValidId(data.uid)
+      && data.nickname is string && data.nickname.size() >= 3 && data.nickname.size() <= 20 && data.nickname.matches('^[a-zA-Z0-9_.-]+$')
+      && data.nicknameLower is string && isValidNicknameId(data.nicknameLower)
+      && data.turma is string && isValidTurma(data.turma)
+      && data.trophies is int && data.trophies >= 0 && data.trophies <= 100000
+      && data.coins is int && data.coins >= 0 && data.coins <= 1000000
+      && data.wins is int && data.wins >= 0 && data.wins <= 100000
+      && data.losses is int && data.losses >= 0 && data.losses <= 100000
+      && data.draws is int && data.draws >= 0 && data.draws <= 100000
+      && data.lossStreak is int && data.lossStreak >= 0 && data.lossStreak <= 3
+      && data.lastDailyClaimAt is string && data.lastDailyClaimAt.size() <= 40
+      && data.unlockedSkins is list && data.unlockedSkins.size() >= 1 && data.unlockedSkins.size() <= 60 && data.unlockedSkins[0] is string
+      && data.equippedSkins is map
+      && data.equippedSkins.keys().hasAll(['papel', 'parafal', 'pedra', 'gelo_invertido', 'tesoura', 'jegue'])
+      && data.equippedSkins.keys().hasOnly(['papel', 'parafal', 'pedra', 'gelo_invertido', 'tesoura', 'jegue'])
+      && data.equippedSkins.papel is string && data.equippedSkins.papel.size() <= 40
+      && data.equippedSkins.parafal is string && data.equippedSkins.parafal.size() <= 40
+      && data.equippedSkins.pedra is string && data.equippedSkins.pedra.size() <= 40
+      && data.equippedSkins.gelo_invertido is string && data.equippedSkins.gelo_invertido.size() <= 40
+      && data.equippedSkins.tesoura is string && data.equippedSkins.tesoura.size() <= 40
+      && data.equippedSkins.jegue is string && data.equippedSkins.jegue.size() <= 40
+      && (!('characterCustomization' in data) || (data.characterCustomization is map && data.characterCustomization.keys().size() <= 10))
+      && (!('claimedMilestones' in data) || (data.claimedMilestones is list && data.claimedMilestones.size() <= 20))
+      && (!('proSeasonMonth' in data) || (data.proSeasonMonth is string && data.proSeasonMonth.size() <= 10))
+      && (!('proSeasonTrophies' in data) || (data.proSeasonTrophies is int && data.proSeasonTrophies >= 0 && data.proSeasonTrophies <= 100000))
+      && data.createdAt is timestamp
+      && data.updatedAt is timestamp;
+    }
+
+    function isValidMatchHistory(data) {
+      return data.keys().hasAll([
+        'id', 'uid', 'outcome', 'opponentName', 'opponentTurma', 'mode',
+        'format', 'isFriendly', 'scoreText', 'trophyDelta', 'playedAt', 'createdAt'
+      ])
+      && data.keys().hasOnly([
+        'id', 'uid', 'outcome', 'opponentName', 'opponentTurma', 'mode',
+        'format', 'isFriendly', 'scoreText', 'trophyDelta', 'playedAt', 'createdAt'
+      ])
+      && data.id is string && isValidId(data.id)
+      && data.uid is string && isValidId(data.uid)
+      && data.outcome in ['win', 'loss', 'draw']
+      && data.opponentName is string && data.opponentName.size() >= 1 && data.opponentName.size() <= 80
+      && data.opponentTurma is string && data.opponentTurma.size() >= 1 && data.opponentTurma.size() <= 30
+      && data.mode in ['1v1', '2v2', '3v3']
+      && data.format in ['MD3', 'MD5']
+      && data.isFriendly is bool
+      && data.scoreText is string && data.scoreText.size() >= 1 && data.scoreText.size() <= 20
+      && data.trophyDelta is int && data.trophyDelta >= -40 && data.trophyDelta <= 80
+      && data.playedAt is string && data.playedAt.size() <= 40
+      && data.createdAt is timestamp;
+    }
+
+    function isValidUserPrivate(data) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'createdAt'])
+      && data.keys().hasOnly(['uid', 'email', 'displayName', 'createdAt'])
+      && data.uid is string && isValidId(data.uid)
+      && data.email is string && data.email.size() <= 200
+      && data.displayName is string && data.displayName.size() <= 100
+      && data.createdAt is timestamp;
+    }
+
+    function isValidNicknameClaim(data) {
+      return data.keys().hasAll(['uid', 'nickname', 'turma', 'createdAt'])
+      && data.keys().hasOnly(['uid', 'nickname', 'turma', 'createdAt'])
+      && data.uid is string && isValidId(data.uid)
+      && data.nickname is string && data.nickname.size() >= 3 && data.nickname.size() <= 20
+      && data.turma is string && isValidTurma(data.turma)
+      && data.createdAt is timestamp;
+    }
+
+    function isValidMatch(data) {
+      return data.keys().hasAll([
+        'id', 'code', 'creatorUid', 'mode', 'format', 'isFriendly', 'isPublicQueue',
+        'status', 'teamSize', 'teamA', 'teamB', 'participantUids', 'currentRound',
+        'roundPhase', 'roundPairings', 'roundStartedAt', 'teamAScore', 'teamBScore',
+        'roundPicks', 'roundHistory', 'winnerTeam', 'createdAt', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'id', 'code', 'creatorUid', 'mode', 'format', 'isFriendly', 'isPublicQueue',
+        'status', 'teamSize', 'teamA', 'teamB', 'participantUids', 'currentRound',
+        'roundPhase', 'roundPairings', 'roundStartedAt', 'teamAScore', 'teamBScore',
+        'roundPicks', 'roundHistory', 'winnerTeam', 'createdAt', 'updatedAt'
+      ])
+      && data.id is string && isValidId(data.id)
+      && data.code is string && data.code.size() >= 4 && data.code.size() <= 10
+      && data.creatorUid is string && isValidId(data.creatorUid)
+      && data.mode in ['1v1', '2v2', '3v3']
+      && data.format in ['MD3', 'MD5']
+      && data.isFriendly is bool
+      && data.isPublicQueue is bool
+      && data.status in ['waiting', 'active', 'finished', 'cancelled']
+      && data.teamSize is int && data.teamSize >= 1 && data.teamSize <= 3
+      && data.teamA is list && data.teamA.size() <= 3
+      && data.teamB is list && data.teamB.size() <= 3
+      && data.participantUids is list && data.participantUids.size() >= 1 && data.participantUids.size() <= 6 && data.participantUids[0] is string
+      && data.currentRound is int && data.currentRound >= 1 && data.currentRound <= 20
+      && data.roundPhase in ['pairing', 'picking']
+      && data.roundPairings is list && data.roundPairings.size() <= 3
+      && data.roundStartedAt is int && data.roundStartedAt >= 0
+      && data.teamAScore is int && data.teamAScore >= 0 && data.teamAScore <= 5
+      && data.teamBScore is int && data.teamBScore >= 0 && data.teamBScore <= 5
+      && data.roundPicks is map
+      && data.roundHistory is list && data.roundHistory.size() <= 20
+      && data.winnerTeam in ['A', 'B', 'DRAW', '']
+      && data.createdAt is timestamp
+      && data.updatedAt is timestamp;
+    }
+
+    function isValidFriendship(data) {
+      return data.keys().hasAll(['id', 'users', 'profiles', 'requesterUid', 'status', 'createdAt', 'updatedAt'])
+      && data.keys().hasOnly(['id', 'users', 'profiles', 'requesterUid', 'status', 'createdAt', 'updatedAt'])
+      && data.id is string && isValidPairId(data.id)
+      && data.users is list && data.users.size() == 2 && data.users[0] is string && data.users[1] is string
+      && data.profiles is map
+      && data.requesterUid is string && isValidId(data.requesterUid)
+      && data.status in ['pending', 'accepted']
+      && data.createdAt is timestamp
+      && data.updatedAt is timestamp;
+    }
+
+    function isValidInvite(data) {
+      return data.keys().hasAll([
+        'id', 'fromUid', 'fromNickname', 'fromTurma', 'toUid', 'matchId',
+        'matchCode', 'mode', 'format', 'isFriendly', 'status', 'createdAt', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'id', 'fromUid', 'fromNickname', 'fromTurma', 'toUid', 'matchId',
+        'matchCode', 'mode', 'format', 'isFriendly', 'status', 'createdAt', 'updatedAt'
+      ])
+      && data.id is string && isValidId(data.id)
+      && data.fromUid is string && isValidId(data.fromUid)
+      && data.fromNickname is string && data.fromNickname.size() >= 3 && data.fromNickname.size() <= 20
+      && data.fromTurma is string && isValidTurma(data.fromTurma)
+      && data.toUid is string && isValidId(data.toUid)
+      && data.matchId is string && isValidId(data.matchId)
+      && data.matchCode is string && data.matchCode.size() >= 4 && data.matchCode.size() <= 10
+      && data.mode in ['1v1', '2v2', '3v3']
+      && data.format in ['MD3', 'MD5']
+      && data.isFriendly is bool
+      && data.status in ['pending', 'accepted', 'declined']
+      && data.createdAt is timestamp
+      && data.updatedAt is timestamp;
+    }
+
+    // 1. Public player profiles (No PII)
+    match /players/{uid} {
+      allow get: if isSignedIn() && isValidId(uid);
+      allow list: if isSignedIn() && resource.data.trophies >= 0;
+
+      allow create: if isSignedIn()
+        && isValidId(uid)
+        && request.auth.uid == uid
+        && isValidPlayer(incoming())
+        && incoming().uid == request.auth.uid
+        && incoming().trophies == 0
+        && incoming().coins == 150
+        && incoming().wins == 0
+        && incoming().losses == 0
+        && incoming().draws == 0
+        && incoming().lossStreak == 0
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isSignedIn()
+        && isValidId(uid)
+        && request.auth.uid == uid
+        && isValidPlayer(incoming())
+        && incoming().uid == existing().uid
+        && incoming().nickname == existing().nickname
+        && incoming().nicknameLower == existing().nicknameLower
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action: Claim daily reward
+          (
+            incoming().diff(existing()).affectedKeys().hasOnly(['coins', 'lastDailyClaimAt', 'updatedAt'])
+            && incoming().coins >= existing().coins
+            && incoming().coins <= existing().coins + 300
+          )
+          ||
+          // Action: Purchase or equip skin or character customization
+          (
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'coins', 'unlockedSkins', 'equippedSkins', 'characterCustomization', 'updatedAt'
+            ])
+            && incoming().coins <= existing().coins
+          )
+          ||
+          // Action: Record match outcome (bounded delta for 1v1, 2v2, 3v3, MD3, MD5)
+          (
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'trophies', 'coins', 'wins', 'losses', 'draws', 'lossStreak',
+              'proSeasonMonth', 'proSeasonTrophies', 'updatedAt'
+            ])
+            && incoming().trophies >= existing().trophies - 35
+            && incoming().trophies <= existing().trophies + 70
+            && incoming().coins >= existing().coins
+            && incoming().coins <= existing().coins + 120
+          )
+          ||
+          // Action: Claim Trophy Road milestone
+          (
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'coins', 'unlockedSkins', 'claimedMilestones', 'updatedAt'
+            ])
+            && incoming().coins >= existing().coins
+            && incoming().coins <= existing().coins + 500
+          )
+          ||
+          // Action: Monthly Pro Season reset
+          (
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'trophies', 'proSeasonMonth', 'proSeasonTrophies', 'updatedAt'
+            ])
+            && existing().trophies >= 10000
+            && incoming().trophies == 10000
+          )
+        );
+
+      match /history/{historyId} {
+        allow get: if isSignedIn() && isValidId(uid) && isValidId(historyId)
+          && request.auth.uid == uid
+          && exists(/databases/$(database)/documents/players/$(uid));
+        allow list: if isSignedIn() && isValidId(uid)
+          && request.auth.uid == uid
+          && resource.data.uid == request.auth.uid;
+        allow create: if isSignedIn() && isValidId(uid) && isValidId(historyId)
+          && request.auth.uid == uid
+          && isValidMatchHistory(incoming())
+          && incoming().id == historyId
+          && incoming().uid == request.auth.uid
+          && incoming().createdAt == request.time
+          && exists(/databases/$(database)/documents/players/$(uid));
+      }
+    }
+
+    // 2. Private user PII (Strictly owner only)
+    match /users_private/{uid} {
+      allow get: if isSignedIn() && isValidId(uid) && request.auth.uid == uid;
+      allow create: if isSignedIn()
+        && isValidId(uid)
+        && request.auth.uid == uid
+        && isValidUserPrivate(incoming())
+        && incoming().uid == request.auth.uid
+        && incoming().createdAt == request.time;
+    }
+
+    // 3. Unique nickname registry
+    match /nicknames/{nicknameLower} {
+      allow get: if isSignedIn() && isValidNicknameId(nicknameLower);
+      allow create: if isSignedIn()
+        && isValidNicknameId(nicknameLower)
+        && isValidNicknameClaim(incoming())
+        && incoming().uid == request.auth.uid
+        && incoming().createdAt == request.time
+        && !exists(/databases/$(database)/documents/nicknames/$(nicknameLower));
+    }
+
+    // 4. Multiplayer match rooms
+    match /matches/{matchId} {
+      allow get: if isSignedIn() && isValidId(matchId);
+      allow list: if isSignedIn() && (
+        resource.data.status == 'waiting'
+        || request.auth.uid in resource.data.participantUids
+      );
+
+      allow create: if isSignedIn()
+        && isValidId(matchId)
+        && isValidMatch(incoming())
+        && incoming().id == matchId
+        && incoming().creatorUid == request.auth.uid
+        && request.auth.uid in incoming().participantUids
+        && incoming().status == 'waiting'
+        && incoming().teamAScore == 0
+        && incoming().teamBScore == 0
+        && incoming().winnerTeam == ''
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isSignedIn()
+        && isValidId(matchId)
+        && isValidMatch(incoming())
+        && existing().status in ['waiting', 'active']
+        && incoming().id == existing().id
+        && incoming().code == existing().code
+        && incoming().creatorUid == existing().creatorUid
+        && incoming().mode == existing().mode
+        && incoming().format == existing().format
+        && incoming().isFriendly == existing().isFriendly
+        && incoming().teamSize == existing().teamSize
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action: Join waiting room (or start when full)
+          (
+            existing().status == 'waiting'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['teamA', 'teamB', 'participantUids', 'status', 'roundPhase', 'roundPairings', 'roundStartedAt', 'updatedAt'])
+            && request.auth.uid in incoming().participantUids
+          )
+          ||
+          // Action: Cancel waiting room by creator
+          (
+            existing().status == 'waiting'
+            && existing().creatorUid == request.auth.uid
+            && incoming().status == 'cancelled'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          )
+          ||
+          // Action: Pair matchups, submit pick, or resolve round / finish active match
+          (
+            existing().status == 'active'
+            && request.auth.uid in existing().participantUids
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'roundPhase', 'roundPairings', 'roundPicks', 'roundHistory', 'currentRound',
+              'roundStartedAt', 'teamAScore', 'teamBScore', 'status', 'winnerTeam', 'updatedAt'
+            ])
+          )
+        );
+    }
+
+    // 5. Friendships & requests
+    match /friendships/{pairId} {
+      allow get: if isSignedIn() && isValidPairId(pairId) && (
+        resource == null || request.auth.uid in resource.data.users
+      );
+      allow list: if isSignedIn() && request.auth.uid in resource.data.users;
+
+      allow create: if isSignedIn()
+        && isValidPairId(pairId)
+        && isValidFriendship(incoming())
+        && incoming().id == pairId
+        && request.auth.uid in incoming().users
+        && incoming().requesterUid == request.auth.uid
+        && incoming().status == 'pending'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isSignedIn()
+        && isValidPairId(pairId)
+        && isValidFriendship(incoming())
+        && existing().status == 'pending'
+        && request.auth.uid in existing().users
+        && request.auth.uid != existing().requesterUid
+        && incoming().status == 'accepted'
+        && incoming().users == existing().users
+        && incoming().requesterUid == existing().requesterUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'profiles', 'updatedAt']);
+
+      allow delete: if isSignedIn()
+        && isValidPairId(pairId)
+        && request.auth.uid in existing().users;
+    }
+
+    // 6. Duel invites
+    match /duel_invites/{inviteId} {
+      allow get: if isSignedIn() && isValidId(inviteId) && (
+        resource.data.toUid == request.auth.uid || resource.data.fromUid == request.auth.uid
+      );
+      allow list: if isSignedIn() && (
+        resource.data.toUid == request.auth.uid || resource.data.fromUid == request.auth.uid
+      );
+
+      allow create: if isSignedIn()
+        && isValidId(inviteId)
+        && isValidInvite(incoming())
+        && incoming().id == inviteId
+        && incoming().fromUid == request.auth.uid
+        && incoming().status == 'pending'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isSignedIn()
+        && isValidId(inviteId)
+        && isValidInvite(incoming())
+        && existing().status == 'pending'
+        && existing().toUid == request.auth.uid
+        && incoming().status in ['accepted', 'declined']
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
+
+      allow delete: if isSignedIn()
+        && isValidId(inviteId)
+        && (existing().fromUid == request.auth.uid || existing().toUid == request.auth.uid);
+    }
+  }
+}

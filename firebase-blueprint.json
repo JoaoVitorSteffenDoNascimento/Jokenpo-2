@@ -1,0 +1,194 @@
+{
+  "entities": {
+    "Player": {
+      "title": "Player",
+      "description": "Public competitive profile for a student player in Jokenpo 2",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "nickname": { "type": "string", "minLength": 3, "maxLength": 20, "pattern": "^[a-zA-Z0-9_.-]+$" },
+        "nicknameLower": { "type": "string", "minLength": 3, "maxLength": 20, "pattern": "^[a-z0-9_.-]+$" },
+        "turma": {
+          "type": "string",
+          "enum": [
+            "INF1M", "INF2M", "INF3M", "INF4M",
+            "INF1T", "INF2T", "INF3T", "INF4T",
+            "ETM1M", "ETM2M", "ETM3M", "ETM4M",
+            "ETM1T", "ETM2T", "ETM3T", "ETM4T"
+          ]
+        },
+        "trophies": { "type": "integer" },
+        "coins": { "type": "integer" },
+        "wins": { "type": "integer" },
+        "losses": { "type": "integer" },
+        "draws": { "type": "integer" },
+        "lossStreak": { "type": "integer" },
+        "lastDailyClaimAt": { "type": "string", "maxLength": 40 },
+        "unlockedSkins": { "type": "array" },
+        "equippedSkins": { "type": "object" },
+        "claimedMilestones": { "type": "array" },
+        "proSeasonMonth": { "type": "string", "maxLength": 10 },
+        "proSeasonTrophies": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "uid", "nickname", "nicknameLower", "turma", "trophies", "coins",
+        "wins", "losses", "draws", "lossStreak", "lastDailyClaimAt",
+        "unlockedSkins", "equippedSkins", "createdAt", "updatedAt"
+      ]
+    },
+    "UserPrivate": {
+      "title": "UserPrivate",
+      "description": "Private PII isolated from public player leaderboard profiles",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "maxLength": 200 },
+        "displayName": { "type": "string", "maxLength": 100 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "displayName", "createdAt"]
+    },
+    "NicknameClaim": {
+      "title": "NicknameClaim",
+      "description": "Atomic reservation guaranteeing unique nicknames across the platform",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "nickname": { "type": "string", "minLength": 3, "maxLength": 20 },
+        "turma": { "type": "string", "maxLength": 10 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "nickname", "turma", "createdAt"]
+    },
+    "MatchRoom": {
+      "title": "MatchRoom",
+      "description": "Real-time multiplayer match room for 1v1, 2v2, and 3v3 in MD3 or MD5",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "code": { "type": "string", "minLength": 4, "maxLength": 10 },
+        "creatorUid": { "type": "string", "maxLength": 128 },
+        "mode": { "type": "string", "enum": ["1v1", "2v2", "3v3"] },
+        "format": { "type": "string", "enum": ["MD3", "MD5"] },
+        "isFriendly": { "type": "boolean" },
+        "isPublicQueue": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["waiting", "active", "finished", "cancelled"] },
+        "teamSize": { "type": "integer" },
+        "teamA": { "type": "array" },
+        "teamB": { "type": "array" },
+        "participantUids": { "type": "array" },
+        "currentRound": { "type": "integer" },
+        "roundPhase": { "type": "string", "enum": ["pairing", "picking"] },
+        "roundPairings": { "type": "array" },
+        "roundStartedAt": { "type": "integer" },
+        "teamAScore": { "type": "integer" },
+        "teamBScore": { "type": "integer" },
+        "roundPicks": { "type": "object" },
+        "roundHistory": { "type": "array" },
+        "winnerTeam": { "type": "string", "enum": ["A", "B", "DRAW", ""] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id", "code", "creatorUid", "mode", "format", "isFriendly", "isPublicQueue",
+        "status", "teamSize", "teamA", "teamB", "participantUids", "currentRound",
+        "roundPhase", "roundPairings", "roundStartedAt", "teamAScore", "teamBScore",
+        "roundPicks", "roundHistory", "winnerTeam", "createdAt", "updatedAt"
+      ]
+    },
+    "Friendship": {
+      "title": "Friendship",
+      "description": "Friend request or accepted friendship between two players",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 260 },
+        "users": { "type": "array" },
+        "profiles": { "type": "object" },
+        "requesterUid": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["pending", "accepted"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "users", "profiles", "requesterUid", "status", "createdAt", "updatedAt"]
+    },
+    "DuelInvite": {
+      "title": "DuelInvite",
+      "description": "Direct invitation to join a 1v1, 2v2, or 3v3 duel room",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "fromUid": { "type": "string", "maxLength": 128 },
+        "fromNickname": { "type": "string", "maxLength": 20 },
+        "fromTurma": { "type": "string", "maxLength": 10 },
+        "toUid": { "type": "string", "maxLength": 128 },
+        "matchId": { "type": "string", "maxLength": 128 },
+        "matchCode": { "type": "string", "maxLength": 10 },
+        "mode": { "type": "string", "enum": ["1v1", "2v2", "3v3"] },
+        "format": { "type": "string", "enum": ["MD3", "MD5"] },
+        "isFriendly": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "declined"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id", "fromUid", "fromNickname", "fromTurma", "toUid", "matchId",
+        "matchCode", "mode", "format", "isFriendly", "status", "createdAt", "updatedAt"
+      ]
+    },
+    "MatchHistory": {
+      "title": "MatchHistory",
+      "description": "Completed duel summary stored in player history subcollection",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "uid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "outcome": { "type": "string", "enum": ["win", "loss", "draw"] },
+        "opponentName": { "type": "string", "maxLength": 80 },
+        "opponentTurma": { "type": "string", "maxLength": 30 },
+        "mode": { "type": "string", "enum": ["1v1", "2v2", "3v3"] },
+        "format": { "type": "string", "enum": ["MD3", "MD5"] },
+        "isFriendly": { "type": "boolean" },
+        "scoreText": { "type": "string", "maxLength": 20 },
+        "trophyDelta": { "type": "integer" },
+        "playedAt": { "type": "string", "maxLength": 40 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id", "uid", "outcome", "opponentName", "opponentTurma", "mode",
+        "format", "isFriendly", "scoreText", "trophyDelta", "playedAt", "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/players/{uid}": {
+      "schema": { "$ref": "#/entities/Player" },
+      "description": "Public player competitive profiles used for rankings, matchmaking, and skins"
+    },
+    "/players/{uid}/history/{historyId}": {
+      "schema": { "$ref": "#/entities/MatchHistory" },
+      "description": "Recent duel history records owned by each player"
+    },
+    "/users_private/{uid}": {
+      "schema": { "$ref": "#/entities/UserPrivate" },
+      "description": "Private PII isolated per user"
+    },
+    "/nicknames/{nicknameLower}": {
+      "schema": { "$ref": "#/entities/NicknameClaim" },
+      "description": "Unique nickname registry mapping lowercase nickname to uid"
+    },
+    "/matches/{matchId}": {
+      "schema": { "$ref": "#/entities/MatchRoom" },
+      "description": "Live multiplayer duel rooms and public matchmaking queue"
+    },
+    "/friendships/{pairId}": {
+      "schema": { "$ref": "#/entities/Friendship" },
+      "description": "Friendships and friend requests between players"
+    },
+    "/duel_invites/{inviteId}": {
+      "schema": { "$ref": "#/entities/DuelInvite" },
+      "description": "Direct duel invitations sent between friends"
+    }
+  }
+}
