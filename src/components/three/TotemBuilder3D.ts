@@ -650,9 +650,8 @@ export function buildHighPolyCardMesh(options: {
       backGeo,
       new THREE.MeshStandardMaterial({
         map: options.frontTexture,
-        bumpMap: options.bumpMap,
-        bumpScale: options.bumpMap ? 0.018 : 0,
-        metalnessMap: options.metalnessMap,
+        ...(options.bumpMap ? { bumpMap: options.bumpMap, bumpScale: 0.018 } : {}),
+        ...(options.metalnessMap ? { metalnessMap: options.metalnessMap } : {}),
         roughness: 0.58,
         metalness: options.metalnessMap ? 0.55 : 0.08,
       })
@@ -670,9 +669,8 @@ export function buildHighPolyCardMesh(options: {
       artGeo,
       new THREE.MeshStandardMaterial({
         map: options.artTexture,
-        bumpMap: options.bumpMap,
-        bumpScale: options.bumpMap ? 0.012 : 0,
-        metalnessMap: options.metalnessMap,
+        ...(options.bumpMap ? { bumpMap: options.bumpMap, bumpScale: 0.012 } : {}),
+        ...(options.metalnessMap ? { metalnessMap: options.metalnessMap } : {}),
         roughness: 0.48,
         metalness: options.metalnessMap ? 0.45 : 0.06,
       })
@@ -1620,8 +1618,7 @@ export function buildSaloonGunProp(
         color: gunTheme.steelHex,
         metalness: 0.9,
         roughness: 0.22,
-        bumpMap: isPlasma ? hexBump : undefined,
-        bumpScale: 0.01,
+        ...(isPlasma ? { bumpMap: hexBump, bumpScale: 0.01 } : {}),
         clearcoat: 0.65,
       });
 

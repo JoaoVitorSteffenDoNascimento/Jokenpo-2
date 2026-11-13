@@ -1,10 +1,12 @@
 import React, { Suspense } from 'react';
-import { onAuthStateChanged, User } from 'firebase/auth';
-import { auth } from './firebase/config';
+import { User } from 'firebase/auth';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   processDailyLoginReward,
   signInWithGoogle,
+  signInWithLocalArena,
   signOutUser,
+  subscribeAuthSession,
   subscribeFriendships,
   subscribeIncomingInvites,
   subscribeLeaderboard,
@@ -27,6 +29,7 @@ import { AppTab, Navbar } from './components/Navbar';
 import { AuthOnboarding } from './components/AuthOnboarding';
 import { LobbyView } from './components/LobbyView';
 import { soundFx } from './utils/soundFx';
+import { exitArenaFullscreen, requestArenaFullscreen } from './utils/haptics';
 
 const ArenaView = React.lazy(() =>
   import('./components/ArenaView').then((m) => ({ default: m.ArenaView }))
@@ -98,9 +101,9 @@ export default function App() {
   const [incomingInvites, setIncomingInvites] = React.useState<DuelInvite[]>([]);
   const [matchHistory, setMatchHistory] = React.useState<MatchHistoryEntry[]>([]);
 
-  // Auth listener
+  // Auth listener (Firebase + Local Arena hybrid session)
   React.useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (user) => {
+    const unsub = subscribeAuthSession((user) => {
       setFirebaseUser(user);
       setAuthReady(true);
       if (!user) {
@@ -188,14 +191,33 @@ export default function App() {
     try {
       await signInWithGoogle();
     } catch (err) {
-      setAuthError(
-        err instanceof Error
-          ? err.message
-          : 'Não foi possível entrar com o Google.'
-      );
+      const msg = err instanceof Error ? err.message : String(err);
+      if (
+        msg.includes('unauthorized-domain') ||
+        msg.includes('operation-not-supported') ||
+        msg.includes('popup-blocked') ||
+        msg.includes('network-request-failed')
+      ) {
+        const localUser = signInWithLocalArena();
+        setFirebaseUser(localUser);
+        setAuthError('');
+      } else if (msg.includes('popup-closed-by-user')) {
+        setAuthError(
+          'Janela do Google fechada. Você pode tentar novamente ou clicar em "Entrar Direto (Nickname + Turma)".'
+        );
+      } else {
+        const localUser = signInWithLocalArena();
+        setFirebaseUser(localUser);
+      }
     } finally {
       setAuthLoading(false);
     }
+  };
+
+  const handleEnterLocalArena = () => {
+    setAuthError('');
+    const localUser = signInWithLocalArena();
+    setFirebaseUser(localUser);
   };
 
   const handleSignOut = async () => {
@@ -217,28 +239,38 @@ export default function App() {
 
   return (
     <div
-      className={`min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col ${
+      className={`relative min-h-screen bg-[#0B0F17] text-slate-100 flex flex-col ${
         player && !inArena ? 'pb-16 md:pb-0' : ''
       }`}
     >
-      <Navbar
-        activeTab={activeTab}
-        onSelectTab={(tab) => {
-          setOnlineMatchId(null);
-          setBotMatchConfig(null);
-          setActiveTab(tab);
-        }}
-        player={player}
-        onSignIn={handleSignIn}
-        onSignOut={handleSignOut}
-        onOpenDeployGuide={() => setDeployGuideOpen(true)}
-        authLoading={authLoading}
-        hideMobileBottomNav={inArena}
-      />
+      {/* AAA Ambient Background Glow */}
+      {!inArena && (
+        <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+          <div className="absolute -top-40 left-1/4 h-96 w-96 rounded-full bg-amber-500/10 blur-[128px]" />
+          <div className="absolute top-1/3 -right-20 h-96 w-96 rounded-full bg-cyan-500/10 blur-[128px]" />
+          <div className="absolute -bottom-20 left-1/3 h-96 w-96 rounded-full bg-emerald-500/10 blur-[128px]" />
+        </div>
+      )}
+      {!inArena && (
+        <Navbar
+          activeTab={activeTab}
+          onSelectTab={(tab) => {
+            setOnlineMatchId(null);
+            setBotMatchConfig(null);
+            setActiveTab(tab);
+          }}
+          player={player}
+          onSignIn={handleSignIn}
+          onSignOut={handleSignOut}
+          onOpenDeployGuide={() => setDeployGuideOpen(true)}
+          authLoading={authLoading}
+          hideMobileBottomNav={inArena}
+        />
+      )}
 
-      {authError && (
+      {authError && !inArena && (
         <div className="mx-auto mt-4 w-full max-w-6xl px-4 sm:px-6">
-          <div className="rounded-xl border border-red-500/40 bg-red-950/40 px-4 py-3 text-xs text-red-300">
+          <div className="rounded-xl border border-amber-500/40 bg-amber-950/40 px-4 py-3 text-xs text-amber-200">
             {authError}
           </div>
         </div>
@@ -252,6 +284,7 @@ export default function App() {
         <AuthOnboarding
           firebaseUser={firebaseUser}
           onSignIn={handleSignIn}
+          onEnterLocalArena={handleEnterLocalArena}
           authLoading={authLoading}
           onAccountCreated={(newProfile) => setPlayer(newProfile)}
           onOpenRules={() => setRulesOpen(true)}
@@ -259,8 +292,8 @@ export default function App() {
       ) : inArena ? (
         <Suspense
           fallback={
-            <div className="flex flex-1 items-center justify-center p-12 text-sm text-amber-300">
-              Preparando mesa 3D...
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#090605] p-12 text-sm text-amber-300">
+              Preparando mesa 3D em Tela Cheia...
             </div>
           }
         >
@@ -271,58 +304,84 @@ export default function App() {
             friendships={friendships}
             onMatchFinished={handleMatchFinished}
             onExitArena={() => {
+              exitArenaFullscreen();
               setOnlineMatchId(null);
               setBotMatchConfig(null);
             }}
             onOpenRules={() => setRulesOpen(true)}
           />
         </Suspense>
-      ) : activeTab === 'arena' ? (
-        <LobbyView
-          player={player}
-          waitingRooms={waitingRooms}
-          incomingInvites={incomingInvites}
-          matchHistory={matchHistory}
-          recentTrophyProgress={recentTrophyProgress}
-          onClearTrophyProgress={handleClearTrophyProgress}
-          onEnterOnlineMatch={(matchId) => {
-            setBotMatchConfig(null);
-            setOnlineMatchId(matchId);
-          }}
-          onStartBotMatch={(config) => {
-            setOnlineMatchId(null);
-            setBotMatchConfig(config);
-          }}
-          onOpenRules={() => setRulesOpen(true)}
-          onOpenTrophyRoad={() => setTrophyRoadOpen(true)}
-          onOpenSkinsShop={() => setActiveTab('skins')}
-          onOpenDeployGuide={() => setDeployGuideOpen(true)}
-        />
       ) : (
-        <Suspense
-          fallback={
-            <div className="flex flex-1 items-center justify-center p-12 text-sm text-slate-400">
-              Carregando módulo...
-            </div>
-          }
-        >
-          {activeTab === 'rankings' ? (
-            <RankingsView players={leaderboard} currentPlayer={player} />
-          ) : activeTab === 'skins' ? (
-            <SkinsShopView player={player} />
+        <AnimatePresence mode="wait">
+          {activeTab === 'arena' ? (
+            <motion.div
+              key="tab-arena"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.2 }}
+              className="flex-1"
+            >
+              <LobbyView
+                player={player}
+                waitingRooms={waitingRooms}
+                incomingInvites={incomingInvites}
+                matchHistory={matchHistory}
+                recentTrophyProgress={recentTrophyProgress}
+                onClearTrophyProgress={handleClearTrophyProgress}
+                onEnterOnlineMatch={(matchId) => {
+                  requestArenaFullscreen();
+                  setBotMatchConfig(null);
+                  setOnlineMatchId(matchId);
+                }}
+                onStartBotMatch={(config) => {
+                  requestArenaFullscreen();
+                  setOnlineMatchId(null);
+                  setBotMatchConfig(config);
+                }}
+                onOpenRules={() => setRulesOpen(true)}
+                onOpenTrophyRoad={() => setTrophyRoadOpen(true)}
+                onOpenSkinsShop={() => setActiveTab('skins')}
+                onOpenDeployGuide={() => setDeployGuideOpen(true)}
+              />
+            </motion.div>
           ) : (
-            <FriendsView
-              player={player}
-              friendships={friendships}
-              allPlayers={leaderboard}
-              onEnterOnlineMatch={(matchId) => {
-                setActiveTab('arena');
-                setBotMatchConfig(null);
-                setOnlineMatchId(matchId);
-              }}
-            />
+            <motion.div
+              key={`tab-${activeTab}`}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.2 }}
+              className="flex-1"
+            >
+              <Suspense
+                fallback={
+                  <div className="flex flex-1 items-center justify-center p-12 text-sm text-slate-400">
+                    Carregando módulo...
+                  </div>
+                }
+              >
+                {activeTab === 'rankings' ? (
+                  <RankingsView players={leaderboard} currentPlayer={player} />
+                ) : activeTab === 'skins' ? (
+                  <SkinsShopView player={player} />
+                ) : (
+                  <FriendsView
+                    player={player}
+                    friendships={friendships}
+                    allPlayers={leaderboard}
+                    onEnterOnlineMatch={(matchId) => {
+                      requestArenaFullscreen();
+                      setActiveTab('arena');
+                      setBotMatchConfig(null);
+                      setOnlineMatchId(matchId);
+                    }}
+                  />
+                )}
+              </Suspense>
+            </motion.div>
           )}
-        </Suspense>
+        </AnimatePresence>
       )}
 
       <Suspense fallback={null}>
@@ -342,7 +401,7 @@ export default function App() {
             onClose={() => setTrophyRoadOpen(false)}
           />
         )}
-        {player && dailyBonus && (
+        {!onlineMatchId && !botMatchConfig && player && dailyBonus && (
           <DailyRewardModal
             open={Boolean(dailyBonus)}
             player={player}

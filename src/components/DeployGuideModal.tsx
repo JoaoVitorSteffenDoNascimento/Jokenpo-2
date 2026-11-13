@@ -105,8 +105,8 @@ export const DeployGuideModal: React.FC<DeployGuideModalProps> = ({
   };
 
   const handleDownloadTwaManifest = () => {
-    const host = window.location.host || 'seu-usuario.github.io';
-    const origin = window.location.origin || 'https://seu-usuario.github.io';
+    const host = window.location.host || 'joaovitorsteffendonascimento.github.io';
+    const origin = window.location.origin || 'https://joaovitorsteffendonascimento.github.io/Jokenpo-2';
     downloadTextFile(
       'twa-manifest.json',
       JSON.stringify(
@@ -123,8 +123,8 @@ export const DeployGuideModal: React.FC<DeployGuideModalProps> = ({
           startUrl: './',
           iconUrl: `${origin}/pwa-512x512.png`,
           maskableIconUrl: `${origin}/pwa-maskable-512x512.png`,
-          appVersionName: '1.0.0',
-          appVersionCode: 1,
+          appVersionName: '2.0.0',
+          appVersionCode: 2,
           webManifestUrl: `${origin}/manifest.json`,
           fallbackType: 'customtabs',
           minSdkVersion: 21,
@@ -138,8 +138,8 @@ export const DeployGuideModal: React.FC<DeployGuideModalProps> = ({
   };
 
   const ghCliCmd =
-    'git init && git add . && git commit -m "Deploy Jokenpo 2" && git branch -M main && git remote add origin https://github.com/SEU-USUARIO/jokenpo-2.git && git push -u origin main';
-  const npxGhPagesCmd = 'npm run build:ghpages && npx gh-pages -d dist --dotfiles';
+    'git add . && git commit -m "feat: update Jokenpo 2 Arena" && git push origin main';
+  const npxGhPagesCmd = 'npm run build && npx gh-pages -d dist --dotfiles';
 
   return (
     <div
@@ -249,9 +249,9 @@ export const DeployGuideModal: React.FC<DeployGuideModalProps> = ({
                   <strong className="text-amber-300">GitHub Actions</strong>.
                 </li>
                 <li>
-                  Pronto! O workflow <code className="font-mono-num text-white">Deploy Jokenpo 2 to GitHub Pages</code> vai rodar sozinho e publicar em:{' '}
+                  Pronto! O workflow <code className="font-mono-num text-white">Deploy Jokenpo 2 to GitHub Pages</code> publica automaticamente em:{' '}
                   <code className="font-mono-num text-emerald-300">
-                    https://SEU-USUARIO.github.io/jokenpo-2/
+                    https://joaovitorsteffendonascimento.github.io/Jokenpo-2/
                   </code>
                 </li>
               </ol>
@@ -352,11 +352,11 @@ export const DeployGuideModal: React.FC<DeployGuideModalProps> = ({
               </div>
               <ol className="space-y-2 list-decimal list-inside text-xs text-slate-300">
                 <li>
-                  Publique no <strong>GitHub Pages</strong> (aba ao lado) para ter seu link HTTPS (ex:{' '}
+                  Use seu link oficial do <strong>GitHub Pages</strong>:{' '}
                   <code className="font-mono-num text-amber-300">
-                    https://seu-usuario.github.io/jokenpo-2/
+                    https://joaovitorsteffendonascimento.github.io/Jokenpo-2/
                   </code>
-                  ).
+                  .
                 </li>
                 <li>
                   Acesse <strong>pwabuilder.com</strong>, cole o link do GitHub Pages e clique em{' '}

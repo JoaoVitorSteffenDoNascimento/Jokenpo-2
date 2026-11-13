@@ -1,16 +1,18 @@
 import React from 'react';
 import { User } from 'firebase/auth';
-import { CheckCircle2, AlertCircle, BookOpen } from 'lucide-react';
+import { CheckCircle2, AlertCircle, BookOpen, Zap } from 'lucide-react';
 import { MOVE_ORDER, MOVES } from '../constants/gameData';
 import {
   checkNicknameAvailable,
   createPlayerAccount,
+  isLocalArenaUid,
 } from '../firebase/services';
 import { PlayerProfile, TURMAS, Turma } from '../types/game';
 
 interface AuthOnboardingProps {
   firebaseUser: User | null;
   onSignIn: () => void;
+  onEnterLocalArena?: () => void;
   authLoading: boolean;
   onAccountCreated: (profile: PlayerProfile) => void;
   onOpenRules: () => void;
@@ -19,6 +21,7 @@ interface AuthOnboardingProps {
 export const AuthOnboarding: React.FC<AuthOnboardingProps> = ({
   firebaseUser,
   onSignIn,
+  onEnterLocalArena,
   authLoading,
   onAccountCreated,
   onOpenRules,
@@ -96,20 +99,32 @@ export const AuthOnboarding: React.FC<AuthOnboardingProps> = ({
             </h1>
             <p className="max-w-xl text-base leading-relaxed text-slate-300">
               Jokenpo 2 une Papel, Parafal, Pedra, Gelo Invertido, Tesoura e Jegue em duelos
-              1v1, Duplas e Trios (MD3 e MD5). Suba de Novato até Veterano, colecione skins
-              com moedas diárias e dispute o Top Global e Regional da escola.
+              1v1, Duplas e Trios (MD3 e MD5). Suba pelos 12 Elos de Novato até a Liga Pro,
+              colecione skins com moedas diárias e dispute o Top Global, Regional e a Guerra das Turmas.
             </p>
 
             <div className="flex flex-wrap items-center gap-3 pt-1">
               {!firebaseUser && (
-                <button
-                  type="button"
-                  disabled={authLoading}
-                  onClick={onSignIn}
-                  className="rounded-lg bg-amber-500 px-6 py-3 text-sm font-bold text-slate-950 hover:bg-amber-400 disabled:opacity-60 transition-colors cursor-pointer"
-                >
-                  {authLoading ? 'Conectando...' : 'Entrar com Google e Jogar'}
-                </button>
+                <>
+                  <button
+                    type="button"
+                    disabled={authLoading}
+                    onClick={onSignIn}
+                    className="rounded-lg bg-amber-500 px-6 py-3 text-sm font-bold text-slate-950 hover:bg-amber-400 disabled:opacity-60 transition-colors cursor-pointer"
+                  >
+                    {authLoading ? 'Conectando...' : 'Entrar com Google e Jogar'}
+                  </button>
+                  {onEnterLocalArena && (
+                    <button
+                      type="button"
+                      onClick={onEnterLocalArena}
+                      className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-5 py-3 text-sm font-bold text-emerald-300 hover:bg-emerald-500/25 transition-colors cursor-pointer"
+                    >
+                      <Zap className="h-4 w-4 text-emerald-400" />
+                      <span>Entrar Direto (Nickname + Turma)</span>
+                    </button>
+                  )}
+                </>
               )}
               <button
                 type="button"
@@ -122,19 +137,26 @@ export const AuthOnboarding: React.FC<AuthOnboardingProps> = ({
             </div>
           </div>
 
-          {/* Onboarding Form if Google user is signed in without profile */}
+          {/* Onboarding Form if Google or Local Arena user is signed in without profile */}
           {firebaseUser ? (
             <form
               onSubmit={handleSubmit}
               className="rounded-2xl border border-amber-500/30 bg-[#131A26] p-6 space-y-5"
             >
-              <div>
-                <h2 className="font-display text-xl font-bold text-white">
-                  Finalize seu cadastro na Arena
-                </h2>
-                <p className="mt-1 text-xs text-slate-400">
-                  Seu nickname é único em toda a plataforma e será usado nos duelos, amizades e rankings.
-                </p>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="font-display text-xl font-bold text-white">
+                    Finalize seu cadastro na Arena
+                  </h2>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Seu nickname é único na plataforma e será usado nos duelos, amizades e rankings.
+                  </p>
+                </div>
+                {isLocalArenaUid(firebaseUser.uid) && (
+                  <span className="shrink-0 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-300">
+                    Modo Direto
+                  </span>
+                )}
               </div>
 
               <div>

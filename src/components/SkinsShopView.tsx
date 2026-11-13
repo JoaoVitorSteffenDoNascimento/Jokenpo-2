@@ -207,8 +207,8 @@ export const SkinsShopView: React.FC<SkinsShopViewProps> = ({ player }) => {
                     : 'border-white/10 bg-[#131A26] hover:border-white/25'
                 }`}
               >
-                <div className="grid grid-cols-12 gap-4 items-center">
-                  <div className="col-span-5">
+                <div className="flex flex-col sm:flex-row gap-3.5 items-stretch sm:items-start">
+                  <div className="w-full max-w-[168px] mx-auto sm:mx-0 sm:w-[116px] shrink-0 overflow-hidden">
                     <MoveCard
                       moveId={skin.moveId}
                       skinId={skin.id}
@@ -220,30 +220,30 @@ export const SkinsShopView: React.FC<SkinsShopViewProps> = ({ player }) => {
                       }}
                     />
                   </div>
-                  <div className="col-span-7 space-y-1.5">
-                    <div className="flex items-center justify-between gap-1">
+                  <div className="flex-1 min-w-0 overflow-hidden space-y-1.5">
+                    <div className="flex flex-wrap items-center justify-between gap-1.5">
                       <span
-                        className="text-xs font-bold"
+                        className="text-xs font-bold break-words"
                         style={{ color: skin.accentColor }}
                       >
                         {skin.rarity} · {MOVES[skin.moveId].name}
                       </span>
                       {skin.customImage && (
-                        <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-amber-300">
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-amber-300 shrink-0">
                           <Sparkles className="h-3 w-3" />
                           Arte Exclusiva
                         </span>
                       )}
                     </div>
-                    <h3 className="font-display text-base font-bold text-white">
+                    <h3 className="font-display text-base font-bold text-white break-words">
                       {skin.name}
                     </h3>
-                    <p className="text-xs leading-relaxed text-slate-400">
+                    <p className="text-xs leading-relaxed text-slate-400 break-words">
                       {skin.description}
                     </p>
-                    <div className="pt-1 text-[11px] font-medium text-slate-300 flex items-center gap-1.5">
+                    <div className="pt-1 text-[11px] font-medium text-slate-300 flex items-center gap-1.5 min-w-0">
                       <Box className="h-3.5 w-3.5 text-amber-400 shrink-0" />
-                      <span>{skin.material3d?.finishLabel ?? 'Acabamento 3D'}</span>
+                      <span className="break-words">{skin.material3d?.finishLabel ?? 'Acabamento 3D'}</span>
                     </div>
                   </div>
                 </div>

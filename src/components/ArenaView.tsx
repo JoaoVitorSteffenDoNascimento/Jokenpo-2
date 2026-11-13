@@ -7,8 +7,11 @@ import {
   ChevronDown,
   ChevronUp,
   Copy,
+  Maximize2,
+  Minimize2,
   RotateCcw,
   Send,
+  Smile,
   Sparkles,
   Trophy,
   Volume2,
@@ -25,6 +28,7 @@ import {
   resolveMovePair,
   ROUND_DURATION_SECONDS,
   SKINS_CATALOG,
+  VICTORY_EMOTES,
 } from '../constants/gameData';
 import {
   autoCompletePairingOnTimeout,
@@ -52,10 +56,18 @@ import {
   TURMAS,
 } from '../types/game';
 import { soundFx } from '../utils/soundFx';
-import { vibrateTap, vibrateThrow } from '../utils/haptics';
+import {
+  vibrateTap,
+  vibrateThrow,
+  isFullscreenActive,
+  requestArenaFullscreen,
+  exitArenaFullscreen,
+  toggleArenaFullscreen,
+} from '../utils/haptics';
 import { MoveCard } from './MoveCard';
 import { UnoTableStage } from './UnoTableStage';
 import { TableArena3D } from './three/TableArena3D';
+import { CinematicClashOverlay } from './CinematicClashOverlay';
 
 interface ArenaViewProps {
   player: PlayerProfile;
@@ -74,7 +86,8 @@ interface ArenaViewProps {
 function buildBotTeam(
   count: number,
   prefix: string,
-  excludeTurma: Turma
+  excludeTurma: Turma,
+  baseTrophies = 400
 ): MatchParticipant[] {
   const result: MatchParticipant[] = [];
   for (let i = 0; i < count; i++) {
@@ -86,12 +99,16 @@ function buildBotTeam(
       const pick = options[Math.floor(Math.random() * options.length)];
       if (pick) equipped[m] = pick.id;
     }
+    const botTrophies =
+      prefix === 'Ally'
+        ? Math.max(120, baseTrophies + 260 + i * 150)
+        : Math.max(40, baseTrophies + 60 + i * 80);
     result.push({
       uid: `bot_${prefix.toLowerCase()}_${i}`,
       nickname:
         prefix === 'Ally' ? `Parceiro_${i + 1}` : `Rival_${turma}`,
       turma,
-      trophies: 600 + i * 250,
+      trophies: botTrophies,
       equippedSkins: equipped,
       characterCustomization: resolveCharacterCustomization(
         null,
@@ -109,8 +126,18 @@ function createInitialBotRoom(
 ): MatchRoom {
   const teamSize: 1 | 2 | 3 =
     config.mode === '3v3' ? 3 : config.mode === '2v2' ? 2 : 1;
-  const allies = buildBotTeam(teamSize - 1, 'Ally', player.turma);
-  const rivals = buildBotTeam(teamSize, 'Rival', player.turma);
+  const allies = buildBotTeam(
+    teamSize - 1,
+    'Ally',
+    player.turma,
+    player.trophies
+  );
+  const rivals = buildBotTeam(
+    teamSize,
+    'Rival',
+    player.turma,
+    player.trophies
+  );
   const teamA: MatchParticipant[] = [
     {
       uid: player.uid,
@@ -274,8 +301,81 @@ export const ArenaView: React.FC<ArenaViewProps> = ({
     getEloInfo(player.trophies).tier.name
   );
   const [stagedMove, setStagedMove] = React.useState<MoveId>('parafal');
-  const [hudCollapsed, setHudCollapsed] = React.useState(false);
+  const autoCollapsedRef = React.useRef<boolean>(
+    typeof window !== 'undefined' ? window.innerHeight < 580 : false
+  );
+  const [hudCollapsed, setHudCollapsed] = React.useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerHeight < 580 : false
+  );
   const [use3DTable, setUse3DTable] = React.useState(true);
+  const [isFullscreen, setIsFullscreen] = React.useState<boolean>(() =>
+    isFullscreenActive()
+  );
+  const [emoteMenuOpen, setEmoteMenuOpen] = React.useState(false);
+  const [quickEmoteBubble, setQuickEmoteBubble] = React.useState<{
+    sender: string;
+    icon: string;
+    phrase: string;
+  } | null>(null);
+
+  React.useEffect(() => {
+    if (!quickEmoteBubble) return;
+    const t = setTimeout(() => setQuickEmoteBubble(null), 2600);
+    return () => clearTimeout(t);
+  }, [quickEmoteBubble]);
+
+  const handleTriggerQuickEmote = (icon: string, phrase: string) => {
+    soundFx.playSelect();
+    vibrateTap();
+    setQuickEmoteBubble({ sender: player.nickname, icon, phrase });
+    setEmoteMenuOpen(false);
+  };
+
+  // Sync fullscreen status, auto-collapse dock on short landscape viewports, and automatically request fullscreen on match mount
+  React.useEffect(() => {
+    const syncFs = () => setIsFullscreen(isFullscreenActive());
+    const onResize = () => {
+      if (window.innerHeight < 520) {
+        autoCollapsedRef.current = true;
+        setHudCollapsed(true);
+      } else if (autoCollapsedRef.current && window.innerHeight >= 580) {
+        autoCollapsedRef.current = false;
+        setHudCollapsed(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullscreenActive()) {
+        exitArenaFullscreen();
+      }
+    };
+
+    document.addEventListener('fullscreenchange', syncFs);
+    document.addEventListener('webkitfullscreenchange', syncFs);
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('resize', onResize, { passive: true });
+
+    requestArenaFullscreen()
+      .then(() => setIsFullscreen(isFullscreenActive()))
+      .catch(() => {});
+
+    return () => {
+      document.removeEventListener('fullscreenchange', syncFs);
+      document.removeEventListener('webkitfullscreenchange', syncFs);
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('resize', onResize);
+    };
+  }, []);
+
+  const handleLeaveArena = () => {
+    exitArenaFullscreen();
+    onExitArena();
+  };
+
+  const handleToggleFullscreen = async () => {
+    vibrateTap();
+    const active = await toggleArenaFullscreen();
+    setIsFullscreen(active);
+  };
 
   const lastSeenRoundHistoryCountRef = React.useRef(0);
   const recordedMatchIdRef = React.useRef<string | null>(null);
@@ -338,7 +438,7 @@ export const ArenaView: React.FC<ArenaViewProps> = ({
     prevOtherPicksCountRef.current = otherPicksCount;
   }, [room?.roundPicks, room?.currentRound, room?.status, revealRound, player.uid]);
 
-  // Detect new round in roundHistory to play FX and show reveal banner
+  // Detect new round in roundHistory to play FX and open reveal banner
   React.useEffect(() => {
     if (!room) return;
     if (room.roundHistory.length > lastSeenRoundHistoryCountRef.current) {
@@ -354,13 +454,17 @@ export const ArenaView: React.FC<ArenaViewProps> = ({
       } else {
         soundFx.playRoundLoss();
       }
-
-      const timer = setTimeout(() => {
-        setRevealRound(null);
-      }, 2400);
-      return () => clearTimeout(timer);
     }
   }, [room, playerTeam]);
+
+  // Dedicated timer to auto-dismiss the round reveal banner so subsequent room updates never cancel it
+  React.useEffect(() => {
+    if (!revealRound) return;
+    const timer = setTimeout(() => {
+      setRevealRound(null);
+    }, 2900);
+    return () => clearTimeout(timer);
+  }, [revealRound]);
 
   // Record match reward once when status === 'finished'
   React.useEffect(() => {
@@ -456,7 +560,10 @@ export const ArenaView: React.FC<ArenaViewProps> = ({
 
     const tick = () => {
       const elapsedSec = Math.floor((Date.now() - room.roundStartedAt) / 1000);
-      const remaining = Math.max(0, ROUND_DURATION_SECONDS - elapsedSec);
+      const remaining = Math.min(
+        ROUND_DURATION_SECONDS,
+        Math.max(0, ROUND_DURATION_SECONDS - Math.max(0, elapsedSec))
+      );
       setSecondsLeft((prev) => (prev !== remaining ? remaining : prev));
 
       if (remaining === 0 && !isBotMode && !resolvingRef.current) {
@@ -553,10 +660,19 @@ export const ArenaView: React.FC<ArenaViewProps> = ({
     }
   }, [isBotMode, botRoom, revealRound, activePairIndex, player.uid]);
 
+  const lastBotTimeoutKeyRef = React.useRef<string>('');
+
   // Bot timeout handling
   React.useEffect(() => {
     if (!isBotMode || !botRoom || botRoom.status !== 'active' || revealRound) return;
     if (secondsLeft === 0) {
+      const elapsedMs = Date.now() - botRoom.roundStartedAt;
+      if (elapsedMs < ROUND_DURATION_SECONDS * 1000 - 250) return;
+
+      const timeoutKey = `${botRoom.id}:${botRoom.currentRound}:${botRoom.roundPhase}:${botRoom.roundStartedAt}`;
+      if (lastBotTimeoutKeyRef.current === timeoutKey) return;
+      lastBotTimeoutKeyRef.current = timeoutKey;
+
       if (botRoom.roundPhase === 'pairing') {
         setBotRoom((curr) => {
           if (!curr || curr.roundPhase !== 'pairing') return curr;
@@ -575,8 +691,22 @@ export const ArenaView: React.FC<ArenaViewProps> = ({
             roundStartedAt: Date.now(),
           };
         });
-      } else if (isMyTurnToPick && !botRoom.roundPicks[player.uid]) {
-        handleSelectMove(stagedMove);
+      } else {
+        setBotRoom((curr) => {
+          if (!curr || curr.status !== 'active' || curr.roundPhase !== 'picking') {
+            return curr;
+          }
+          const nextPicks = { ...curr.roundPicks };
+          for (const uid of curr.participantUids) {
+            if (!nextPicks[uid]) {
+              nextPicks[uid] =
+                uid === player.uid
+                  ? stagedMove
+                  : MOVE_ORDER[Math.floor(Math.random() * MOVE_ORDER.length)];
+            }
+          }
+          return advanceBotRoomWithPicks(curr, nextPicks);
+        });
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -624,7 +754,12 @@ export const ArenaView: React.FC<ArenaViewProps> = ({
 
     if (isBotMode && botRoom) {
       setBotRoom((curr) => {
-        if (!curr || curr.status !== 'active' || curr.roundPhase !== 'picking') {
+        if (
+          !curr ||
+          curr.status !== 'active' ||
+          curr.roundPhase !== 'picking' ||
+          curr.roundPicks[player.uid]
+        ) {
           return curr;
         }
         return advanceBotRoomWithPicks(curr, {
@@ -698,7 +833,7 @@ export const ArenaView: React.FC<ArenaViewProps> = ({
 
   if (!room) {
     return (
-      <main className="mx-auto max-w-4xl px-4 py-16 text-center">
+      <main className="fixed inset-0 z-50 flex h-[100dvh] w-screen items-center justify-center bg-[#090605] px-4 text-center">
         <p className="text-sm text-slate-400">Carregando sala da arena...</p>
       </main>
     );
@@ -723,142 +858,164 @@ export const ArenaView: React.FC<ArenaViewProps> = ({
   // Waiting Room View
   if (room.status === 'waiting') {
     return (
-      <main className="mx-auto max-w-4xl space-y-6 px-4 py-8 sm:px-6">
-        <div className="flex items-center justify-between">
-          <button
-            type="button"
-            onClick={onExitArena}
-            className="inline-flex items-center gap-2 text-sm font-semibold text-slate-300 hover:text-white cursor-pointer"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            <span>Voltar ao Lobby</span>
-          </button>
-
-          {room.creatorUid === player.uid && (
+      <main className="fixed inset-0 z-50 flex h-[100dvh] w-screen flex-col overflow-y-auto bg-[#090605] px-4 py-6 sm:px-6">
+        <div className="mx-auto w-full max-w-4xl space-y-6">
+          <div className="flex items-center justify-between">
             <button
               type="button"
-              onClick={async () => {
-                await cancelMatchRoom(room.id);
-                onExitArena();
-              }}
-              className="rounded-lg border border-red-500/40 px-3.5 py-1.5 text-xs font-semibold text-red-300 hover:bg-red-950/40 cursor-pointer"
+              onClick={handleLeaveArena}
+              className="inline-flex items-center gap-2 text-sm font-semibold text-slate-300 hover:text-white cursor-pointer"
             >
-              Cancelar Sala
+              <ArrowLeft className="h-4 w-4" />
+              <span>Voltar ao Lobby</span>
             </button>
-          )}
-        </div>
 
-        <section className="rounded-2xl border border-white/10 bg-[#131A26] p-6 space-y-6">
-          <div className="flex flex-col justify-between gap-4 border-b border-white/10 pb-5 sm:flex-row sm:items-center">
-            <div>
-              <div className="text-xs font-semibold text-amber-400">
-                {room.mode} · {room.format} · {room.isFriendly ? 'Amistoso' : 'Ranqueada'}
-              </div>
-              <h1 className="font-display mt-1 text-2xl font-extrabold text-white">
-                Aguardando Jogadores ({room.participantUids.length}/{room.teamSize * 2})
-              </h1>
-            </div>
-
-            <div className="flex items-center gap-2 rounded-xl border border-white/15 bg-[#0B0F17] px-4 py-2.5">
-              <span className="text-xs text-slate-400">Código:</span>
-              <span className="font-mono-num text-lg font-bold tracking-wider text-amber-400">
-                {room.code}
-              </span>
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={handleCopyCode}
-                aria-label="Copiar código"
-                className="ml-1 text-slate-400 hover:text-white cursor-pointer"
+                onClick={handleToggleFullscreen}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-[#131A26] px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-amber-400 cursor-pointer"
               >
-                {copiedCode ? (
-                  <Check className="h-4 w-4 text-emerald-400" />
+                {isFullscreen ? (
+                  <>
+                    <Minimize2 className="h-3.5 w-3.5 text-amber-400" />
+                    <span>Sair da Tela Cheia</span>
+                  </>
                 ) : (
-                  <Copy className="h-4 w-4" />
+                  <>
+                    <Maximize2 className="h-3.5 w-3.5 text-amber-400" />
+                    <span>Tela Cheia</span>
+                  </>
                 )}
               </button>
+
+              {room.creatorUid === player.uid && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await cancelMatchRoom(room.id);
+                    handleLeaveArena();
+                  }}
+                  className="rounded-lg border border-red-500/40 px-3.5 py-1.5 text-xs font-semibold text-red-300 hover:bg-red-950/40 cursor-pointer"
+                >
+                  Cancelar Sala
+                </button>
+              )}
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-            <div className="rounded-xl border border-white/10 bg-[#0B0F17] p-4 space-y-2.5">
-              <div className="text-xs font-bold text-amber-400">
-                Equipe A ({room.teamA.length}/{room.teamSize})
+          <section className="rounded-2xl border border-white/10 bg-[#131A26] p-6 space-y-6">
+            <div className="flex flex-col justify-between gap-4 border-b border-white/10 pb-5 sm:flex-row sm:items-center">
+              <div>
+                <div className="text-xs font-semibold text-amber-400">
+                  {room.mode} · {room.format} · {room.isFriendly ? 'Amistoso' : 'Ranqueada'}
+                </div>
+                <h1 className="font-display mt-1 text-2xl font-extrabold text-white">
+                  Aguardando Jogadores ({room.participantUids.length}/{room.teamSize * 2})
+                </h1>
               </div>
-              {Array.from({ length: room.teamSize }).map((_, idx) => {
-                const p = room.teamA[idx];
-                return (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between rounded-lg border border-white/5 bg-[#131A26] px-3 py-2 text-sm"
-                  >
-                    <span className={p ? 'font-semibold text-white' : 'text-slate-500'}>
-                      {p ? p.nickname : 'Vaga aberta...'}
-                    </span>
-                    {p && <span className="text-xs text-slate-400">{p.turma}</span>}
-                  </div>
-                );
-              })}
+
+              <div className="flex items-center gap-2 rounded-xl border border-white/15 bg-[#0B0F17] px-4 py-2.5">
+                <span className="text-xs text-slate-400">Código:</span>
+                <span className="font-mono-num text-lg font-bold tracking-wider text-amber-400">
+                  {room.code}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleCopyCode}
+                  aria-label="Copiar código"
+                  className="ml-1 text-slate-400 hover:text-white cursor-pointer"
+                >
+                  {copiedCode ? (
+                    <Check className="h-4 w-4 text-emerald-400" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
             </div>
 
-            <div className="rounded-xl border border-white/10 bg-[#0B0F17] p-4 space-y-2.5">
-              <div className="text-xs font-bold text-sky-400">
-                Equipe B ({room.teamB.length}/{room.teamSize})
-              </div>
-              {Array.from({ length: room.teamSize }).map((_, idx) => {
-                const p = room.teamB[idx];
-                return (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between rounded-lg border border-white/5 bg-[#131A26] px-3 py-2 text-sm"
-                  >
-                    <span className={p ? 'font-semibold text-white' : 'text-slate-500'}>
-                      {p ? p.nickname : 'Vaga aberta...'}
-                    </span>
-                    {p && <span className="text-xs text-slate-400">{p.turma}</span>}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {acceptedFriends.length > 0 && (
-            <div className="border-t border-white/10 pt-5 space-y-3">
-              <div className="text-xs font-semibold text-slate-300">
-                Convidar Amigos para esta Sala
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {acceptedFriends.map((f) => {
-                  const otherUid = f.users.find((u) => u !== player.uid) ?? '';
-                  const snap = f.profiles?.[otherUid];
-                  const alreadyIn = room.participantUids.includes(otherUid);
-                  const sent = invitedUids.includes(otherUid);
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+              <div className="rounded-xl border border-white/10 bg-[#0B0F17] p-4 space-y-2.5">
+                <div className="text-xs font-bold text-amber-400">
+                  Equipe A ({room.teamA.length}/{room.teamSize})
+                </div>
+                {Array.from({ length: room.teamSize }).map((_, idx) => {
+                  const p = room.teamA[idx];
                   return (
-                    <button
-                      key={f.id}
-                      type="button"
-                      disabled={alreadyIn || sent}
-                      onClick={async () => {
-                        await sendDuelInvite({
-                          fromPlayer: player,
-                          toUid: otherUid,
-                          match: room,
-                        });
-                        setInvitedUids((prev) => [...prev, otherUid]);
-                      }}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-[#0B0F17] px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-amber-400 disabled:opacity-50 cursor-pointer"
+                    <div
+                      key={idx}
+                      className="flex items-center justify-between rounded-lg border border-white/5 bg-[#131A26] px-3 py-2 text-sm"
                     >
-                      <Send className="h-3 w-3 text-amber-400" />
-                      <span>
-                        {snap?.nickname ?? 'Amigo'}{' '}
-                        {alreadyIn ? '(Na sala)' : sent ? '(Convidado)' : ''}
+                      <span className={p ? 'font-semibold text-white' : 'text-slate-500'}>
+                        {p ? p.nickname : 'Vaga aberta...'}
                       </span>
-                    </button>
+                      {p && <span className="text-xs text-slate-400">{p.turma}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="rounded-xl border border-white/10 bg-[#0B0F17] p-4 space-y-2.5">
+                <div className="text-xs font-bold text-sky-400">
+                  Equipe B ({room.teamB.length}/{room.teamSize})
+                </div>
+                {Array.from({ length: room.teamSize }).map((_, idx) => {
+                  const p = room.teamB[idx];
+                  return (
+                    <div
+                      key={idx}
+                      className="flex items-center justify-between rounded-lg border border-white/5 bg-[#131A26] px-3 py-2 text-sm"
+                    >
+                      <span className={p ? 'font-semibold text-white' : 'text-slate-500'}>
+                        {p ? p.nickname : 'Vaga aberta...'}
+                      </span>
+                      {p && <span className="text-xs text-slate-400">{p.turma}</span>}
+                    </div>
                   );
                 })}
               </div>
             </div>
-          )}
-        </section>
+
+            {acceptedFriends.length > 0 && (
+              <div className="border-t border-white/10 pt-5 space-y-3">
+                <div className="text-xs font-semibold text-slate-300">
+                  Convidar Amigos para esta Sala
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {acceptedFriends.map((f) => {
+                    const otherUid = f.users.find((u) => u !== player.uid) ?? '';
+                    const snap = f.profiles?.[otherUid];
+                    const alreadyIn = room.participantUids.includes(otherUid);
+                    const sent = invitedUids.includes(otherUid);
+                    return (
+                      <button
+                        key={f.id}
+                        type="button"
+                        disabled={alreadyIn || sent}
+                        onClick={async () => {
+                          await sendDuelInvite({
+                            fromPlayer: player,
+                            toUid: otherUid,
+                            match: room,
+                          });
+                          setInvitedUids((prev) => [...prev, otherUid]);
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-[#0B0F17] px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-amber-400 disabled:opacity-50 cursor-pointer"
+                      >
+                        <Send className="h-3 w-3 text-amber-400" />
+                        <span>
+                          {snap?.nickname ?? 'Amigo'}{' '}
+                          {alreadyIn ? '(Na sala)' : sent ? '(Convidado)' : ''}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </section>
+        </div>
       </main>
     );
   }
@@ -876,21 +1033,42 @@ export const ArenaView: React.FC<ArenaViewProps> = ({
     playerTeam === 'A' ? pairedA.has(player.uid) : pairedB.has(player.uid);
 
   return (
-    <main className="mx-auto flex min-h-[calc(100dvh-72px)] max-w-6xl flex-col gap-2.5 sm:gap-4 px-2.5 py-2.5 sm:px-6 sm:py-5">
-      {/* Top Arena HUD */}
-      <section className="flex flex-wrap items-center justify-between gap-2 sm:gap-4 rounded-xl sm:rounded-2xl border border-white/10 bg-[#131A26] px-3 py-2 sm:px-5 sm:py-3">
-        <div className="flex items-center gap-2.5 sm:gap-4">
+    <main
+      className="fixed inset-0 z-50 flex h-screen h-[100dvh] w-screen flex-col overflow-hidden bg-slate-950 text-slate-100 select-none pt-safe pt-2.5 sm:pt-3 px-2 sm:px-3 pb-safe pb-2 gap-1.5 sm:gap-2"
+      style={{
+        paddingTop: 'max(env(safe-area-inset-top, 0px), 12px)',
+      }}
+    >
+      {/* Cinematic Clash Overlay on Top of the Match Stage */}
+      <CinematicClashOverlay
+        revealRound={revealRound}
+        playerTeam={playerTeam}
+        room={room}
+      />
+
+      {/* Floating Quick Emote Bubble in Arena HUD */}
+      {quickEmoteBubble && (
+        <div className="pointer-events-none absolute top-16 sm:top-20 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-full border border-amber-400/80 bg-slate-950/95 px-4 py-2 text-xs font-black text-white shadow-2xl backdrop-blur-md animate-bounce">
+          <span className="text-lg">{quickEmoteBubble.icon}</span>
+          <span className="text-amber-400">{quickEmoteBubble.sender}:</span>
+          <span>{quickEmoteBubble.phrase}</span>
+        </div>
+      )}
+
+      {/* Top Arena HUD Bar (Compact & Unclipped) */}
+      <section className="shrink-0 flex min-h-[54px] sm:min-h-[60px] md:min-h-[64px] flex-wrap items-center justify-between gap-2 sm:gap-4 rounded-xl border border-white/10 bg-[#131A26]/95 px-3 py-2 sm:px-4 sm:py-2.5 backdrop-blur-md shadow-lg">
+        <div className="flex items-center gap-2 sm:gap-3">
           <button
             type="button"
-            onClick={onExitArena}
-            className="inline-flex min-h-[38px] items-center gap-1.5 text-xs font-semibold text-slate-300 hover:text-white cursor-pointer"
+            onClick={handleLeaveArena}
+            className="inline-flex min-h-[34px] items-center gap-1.5 rounded-lg border border-white/10 bg-[#0B0F17] px-2.5 py-1 text-xs font-semibold text-slate-300 hover:border-white/25 hover:text-white cursor-pointer"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <ArrowLeft className="h-3.5 w-3.5" />
             <span className="hidden xs:inline sm:inline">Sair</span>
           </button>
-          <span className="text-[11px] sm:text-xs text-slate-400">
+          <span className="text-[11px] sm:text-xs font-medium text-slate-400">
             {room.mode} · {room.format}
-            <span className="hidden sm:inline">
+            <span className="hidden md:inline">
               {' '}
               · {room.isFriendly ? 'Amistoso' : 'Ranqueada'}
               {isBotMode ? ' · vs Bot' : ''}
@@ -899,37 +1077,37 @@ export const ArenaView: React.FC<ArenaViewProps> = ({
         </div>
 
         {/* Scoreboard */}
-        <div className="flex items-center gap-3 sm:gap-5">
+        <div className="flex items-center gap-2.5 sm:gap-4">
           <div className="text-right">
-            <div className="hidden sm:block text-[11px] font-semibold text-amber-400">
+            <div className="hidden sm:block text-[10px] font-bold uppercase tracking-wider text-amber-400">
               Sua Equipe
             </div>
-            <div className="flex items-center justify-end gap-1 sm:mt-1 sm:gap-1.5">
+            <div className="flex items-center justify-end gap-1 sm:mt-0.5 sm:gap-1.5">
               {Array.from({ length: targetWins }).map((_, i) => (
                 <span
                   key={i}
-                  className={`h-2 w-4 sm:h-2.5 sm:w-6 rounded-sm transition-colors ${
-                    i < myTeamScore ? 'bg-amber-400' : 'bg-[#0B0F17] border border-white/15'
+                  className={`h-2 w-4 sm:h-2 sm:w-5 rounded-sm transition-colors ${
+                    i < myTeamScore ? 'bg-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.6)]' : 'bg-[#0B0F17] border border-white/15'
                   }`}
                 />
               ))}
             </div>
           </div>
 
-          <div className="font-mono-num text-lg sm:text-2xl font-extrabold text-white">
+          <div className="font-mono-num text-base sm:text-xl font-extrabold text-white">
             {myTeamScore} : {oppTeamScore}
           </div>
 
           <div className="text-left">
-            <div className="hidden sm:block text-[11px] font-semibold text-sky-400">
+            <div className="hidden sm:block text-[10px] font-bold uppercase tracking-wider text-sky-400">
               Adversários
             </div>
-            <div className="flex items-center gap-1 sm:mt-1 sm:gap-1.5">
+            <div className="flex items-center gap-1 sm:mt-0.5 sm:gap-1.5">
               {Array.from({ length: targetWins }).map((_, i) => (
                 <span
                   key={i}
-                  className={`h-2 w-4 sm:h-2.5 sm:w-6 rounded-sm transition-colors ${
-                    i < oppTeamScore ? 'bg-sky-400' : 'bg-[#0B0F17] border border-white/15'
+                  className={`h-2 w-4 sm:h-2 sm:w-5 rounded-sm transition-colors ${
+                    i < oppTeamScore ? 'bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.6)]' : 'bg-[#0B0F17] border border-white/15'
                   }`}
                 />
               ))}
@@ -937,15 +1115,15 @@ export const ArenaView: React.FC<ArenaViewProps> = ({
           </div>
         </div>
 
-        {/* Camera Mode Toggle, Sound & Rules */}
-        <div className="flex items-center gap-1.5 sm:gap-2.5">
+        {/* Camera Mode Toggle, Fullscreen, Quick Emotes, Sound & Rules */}
+        <div className="flex items-center gap-1.5 sm:gap-2">
           <button
             type="button"
             onClick={() => {
               vibrateTap();
               setUse3DTable((v) => !v);
             }}
-            className={`inline-flex min-h-[38px] items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] sm:text-xs font-bold transition-colors cursor-pointer ${
+            className={`inline-flex min-h-[34px] items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] sm:text-xs font-bold transition-colors cursor-pointer ${
               use3DTable
                 ? 'border-amber-400/60 bg-amber-500/15 text-amber-300'
                 : 'border-white/15 bg-[#0B0F17] text-slate-300 hover:text-white'
@@ -954,15 +1132,72 @@ export const ArenaView: React.FC<ArenaViewProps> = ({
             <Box className="h-3.5 w-3.5" />
             <span className="sm:hidden">{use3DTable ? '3D' : '2D'}</span>
             <span className="hidden sm:inline">
-              {use3DTable ? "Mesa 3D (Liar's Bar)" : 'Visão 2D'}
+              {use3DTable ? 'Mesa 3D' : 'Visão 2D'}
             </span>
           </button>
 
           <button
             type="button"
+            onClick={handleToggleFullscreen}
+            title={isFullscreen ? 'Sair da Tela Cheia' : 'Ativar Tela Cheia'}
+            aria-label={isFullscreen ? 'Sair da Tela Cheia' : 'Ativar Tela Cheia'}
+            className={`inline-flex min-h-[34px] items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] sm:text-xs font-bold transition-colors cursor-pointer ${
+              isFullscreen
+                ? 'border-emerald-400/50 bg-emerald-500/15 text-emerald-300'
+                : 'border-white/15 bg-[#0B0F17] text-slate-300 hover:border-amber-400/50 hover:text-white'
+            }`}
+          >
+            {isFullscreen ? (
+              <Minimize2 className="h-3.5 w-3.5" />
+            ) : (
+              <Maximize2 className="h-3.5 w-3.5" />
+            )}
+            <span className="hidden lg:inline">
+              {isFullscreen ? 'Tela Cheia Ativa' : 'Tela Cheia'}
+            </span>
+          </button>
+
+          {/* Quick Battle Emotes Popover */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setEmoteMenuOpen((v) => !v)}
+              title="Reações Rápidas de Combate"
+              aria-label="Reações Rápidas de Combate"
+              className={`flex min-h-[34px] min-w-[34px] items-center justify-center rounded-lg border p-1.5 transition-colors cursor-pointer ${
+                emoteMenuOpen
+                  ? 'border-amber-400 bg-amber-500/20 text-amber-300'
+                  : 'border-white/15 bg-[#0B0F17] text-slate-300 hover:text-white'
+              }`}
+            >
+              <Smile className="h-4 w-4" />
+            </button>
+
+            {emoteMenuOpen && (
+              <div className="absolute right-0 top-full mt-2 z-50 flex flex-col gap-1 rounded-xl border border-amber-500/40 bg-slate-900/95 p-2 shadow-2xl backdrop-blur-md w-52 max-h-64 overflow-y-auto">
+                <div className="px-2 py-1 text-[10px] font-extrabold uppercase tracking-wider text-amber-400 border-b border-white/10">
+                  Provocações & Reações
+                </div>
+                {VICTORY_EMOTES.map((em) => (
+                  <button
+                    key={em.id}
+                    type="button"
+                    onClick={() => handleTriggerQuickEmote(em.icon, em.phrase)}
+                    className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs font-semibold text-slate-200 hover:bg-amber-500/15 hover:text-white transition-colors cursor-pointer"
+                  >
+                    <span className="text-base">{em.icon}</span>
+                    <span className="truncate">{em.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <button
+            type="button"
             onClick={handleToggleMute}
             aria-label={muted ? 'Ativar som' : 'Silenciar som'}
-            className="flex min-h-[38px] min-w-[38px] items-center justify-center rounded-lg border border-white/15 bg-[#0B0F17] p-2 text-slate-300 hover:text-white cursor-pointer"
+            className="flex min-h-[34px] min-w-[34px] items-center justify-center rounded-lg border border-white/15 bg-[#0B0F17] p-1.5 text-slate-300 hover:text-white cursor-pointer"
           >
             {muted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
           </button>
@@ -971,61 +1206,65 @@ export const ArenaView: React.FC<ArenaViewProps> = ({
             type="button"
             onClick={onOpenRules}
             aria-label="Regras do hexágono"
-            className="flex min-h-[38px] min-w-[38px] items-center justify-center rounded-lg border border-white/15 bg-[#0B0F17] p-2 text-amber-400 hover:text-amber-300 cursor-pointer"
+            className="flex min-h-[34px] min-w-[34px] items-center justify-center rounded-lg border border-white/15 bg-[#0B0F17] p-1.5 text-amber-400 hover:text-amber-300 cursor-pointer"
           >
             <BookOpen className="h-4 w-4" />
           </button>
         </div>
       </section>
 
-      {/* Main Match Table Stage: 3D Saloon Table (Default) or 2D Tactical Table */}
-      {use3DTable ? (
-        <TableArena3D
-          room={room}
-          player={player}
-          playerTeam={playerTeam}
-          secondsLeft={secondsLeft}
-          stagedMove={stagedMove}
-          revealRound={revealRound}
-          activePairIndex={activePairIndex}
-          activePairUids={activePairUids}
-          isMyTurnToPick={isMyTurnToPick}
-          isMyTeamChoosing={isMyTeamChoosing}
-          amIPaired={amIPaired}
-          myTeamSum={myTeamSum}
-          oppTeamSum={oppTeamSum}
-          hudCollapsed={hudCollapsed}
-          onToggleHud={() => setHudCollapsed((v) => !v)}
-          onStageMove={(m) => {
-            soundFx.playSelect();
-            setStagedMove(m);
-          }}
-          onThrowStagedMove={() => handleSelectMove(stagedMove)}
-          onChooseOpponent={handleChooseOpponent}
-          onFallbackTo2D={() => {
-            soundFx.playSelect();
-            setUse3DTable(false);
-          }}
-        />
-      ) : (
-        <UnoTableStage
-          room={room}
-          player={player}
-          playerTeam={playerTeam}
-          revealRound={revealRound}
-          activePairIndex={activePairIndex}
-          activePairUids={activePairUids}
-          isMyTurnToPick={isMyTurnToPick}
-          isMyTeamChoosing={isMyTeamChoosing}
-          amIPaired={amIPaired}
-          myTeamSum={myTeamSum}
-          oppTeamSum={oppTeamSum}
-          onChooseOpponent={handleChooseOpponent}
-        />
-      )}
+      {/* Main Match Table Stage: Fills remaining viewport height cleanly */}
+      <div className="relative flex-1 min-h-0 w-full flex flex-col overflow-hidden">
+        {use3DTable ? (
+          <TableArena3D
+            room={room}
+            player={player}
+            playerTeam={playerTeam}
+            secondsLeft={secondsLeft}
+            stagedMove={stagedMove}
+            revealRound={revealRound}
+            activePairIndex={activePairIndex}
+            activePairUids={activePairUids}
+            isMyTurnToPick={isMyTurnToPick}
+            isMyTeamChoosing={isMyTeamChoosing}
+            amIPaired={amIPaired}
+            myTeamSum={myTeamSum}
+            oppTeamSum={oppTeamSum}
+            hudCollapsed={hudCollapsed}
+            onToggleHud={() => setHudCollapsed((v) => !v)}
+            onStageMove={(m) => {
+              soundFx.playSelect();
+              setStagedMove(m);
+            }}
+            onThrowStagedMove={() => handleSelectMove(stagedMove)}
+            onChooseOpponent={handleChooseOpponent}
+            onFallbackTo2D={() => {
+              soundFx.playSelect();
+              setUse3DTable(false);
+            }}
+          />
+        ) : (
+          <div className="h-full w-full overflow-y-auto">
+            <UnoTableStage
+              room={room}
+              player={player}
+              playerTeam={playerTeam}
+              revealRound={revealRound}
+              activePairIndex={activePairIndex}
+              activePairUids={activePairUids}
+              isMyTurnToPick={isMyTurnToPick}
+              isMyTeamChoosing={isMyTeamChoosing}
+              amIPaired={amIPaired}
+              myTeamSum={myTeamSum}
+              oppTeamSum={oppTeamSum}
+              onChooseOpponent={handleChooseOpponent}
+            />
+          </div>
+        )}
+      </div>
 
-      {/* Thumb-Zone Player Hand Dock at the Bottom */}
-      <section className="rounded-xl sm:rounded-2xl border border-white/10 bg-[#131A26] p-2.5 sm:p-3.5 space-y-2.5 sm:space-y-3">
+      {/* Thumb-Zone Player Hand Dock at the Bottom (Compact so 3D Arena stays large) */}
+      <section className="shrink-0 rounded-xl border border-white/10 bg-[#131A26]/95 px-2.5 py-2 sm:px-3.5 sm:py-2.5 space-y-2 backdrop-blur-md">
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 text-slate-300">
             <span className="font-display font-bold text-white">
@@ -1057,7 +1296,7 @@ export const ArenaView: React.FC<ArenaViewProps> = ({
                   vibrateThrow();
                   handleSelectMove(stagedMove);
                 }}
-                className="hidden sm:inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-extrabold text-slate-950 hover:bg-amber-400 cursor-pointer"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1 text-xs font-extrabold text-slate-950 hover:bg-amber-400 shadow-md shadow-amber-500/20 cursor-pointer"
               >
                 <Sparkles className="h-3.5 w-3.5" />
                 <span>Lançar {MOVES[stagedMove].shortName} [ESPAÇO]</span>
@@ -1066,8 +1305,11 @@ export const ArenaView: React.FC<ArenaViewProps> = ({
 
             <button
               type="button"
-              onClick={() => setHudCollapsed((v) => !v)}
-              className="inline-flex min-h-[34px] items-center gap-1 rounded-lg border border-white/15 bg-[#0B0F17] px-2.5 py-1 text-xs font-semibold text-slate-300 hover:text-white cursor-pointer"
+              onClick={() => {
+                autoCollapsedRef.current = false;
+                setHudCollapsed((v) => !v);
+              }}
+              className="inline-flex min-h-[30px] items-center gap-1 rounded-lg border border-white/15 bg-[#0B0F17] px-2.5 py-1 text-xs font-semibold text-slate-300 hover:text-white cursor-pointer"
             >
               {hudCollapsed ? (
                 <>
@@ -1085,12 +1327,13 @@ export const ArenaView: React.FC<ArenaViewProps> = ({
         </div>
 
         {!hudCollapsed && (
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-3 lg:grid-cols-6 sm:gap-3">
+          <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6 sm:gap-2">
             {MOVE_ORDER.map((moveId, idx) => (
               <MoveCard
                 key={moveId}
                 moveId={moveId}
                 skinId={player.equippedSkins[moveId]}
+                auraId={player.characterCustomization?.cardAuraId}
                 selected={(myPick ?? stagedMove) === moveId}
                 compact
                 disabled={
@@ -1105,31 +1348,16 @@ export const ArenaView: React.FC<ArenaViewProps> = ({
             ))}
           </div>
         )}
-
-        {/* Mobile Thumb-Zone Primary Action CTA */}
-        {room.roundPhase === 'picking' && !revealRound && !myPick && isMyTurnToPick && (
-          <button
-            type="button"
-            onClick={() => {
-              vibrateThrow();
-              handleSelectMove(stagedMove);
-            }}
-            className="flex sm:hidden w-full min-h-[48px] items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 py-3 text-sm font-black uppercase tracking-wide text-slate-950 shadow-lg shadow-amber-500/25 active:scale-[0.98] transition-transform cursor-pointer"
-          >
-            <Sparkles className="h-4 w-4" />
-            <span>Jogar {MOVES[stagedMove].name} na Mesa</span>
-          </button>
-        )}
       </section>
 
       {/* Match Over Modal with Animated Trophy Counter & Progress Bar */}
       {room.status === 'finished' && !revealRound && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-md"
           role="dialog"
           aria-modal="true"
         >
-          <div className="w-full max-w-md rounded-2xl border border-white/15 bg-[#131A26] p-6 text-center space-y-5 shadow-2xl">
+          <div className="relative w-full max-w-md rounded-2xl border border-white/20 bg-slate-900/90 p-6 text-center space-y-5 shadow-2xl backdrop-blur-2xl">
             <div>
               <div className="text-xs font-semibold text-slate-400">
                 {room.mode} · {room.format} · {room.isFriendly ? 'Amistoso' : 'Ranqueada'}
@@ -1234,7 +1462,7 @@ export const ArenaView: React.FC<ArenaViewProps> = ({
               )}
               <button
                 type="button"
-                onClick={onExitArena}
+                onClick={handleLeaveArena}
                 className={`flex-1 rounded-xl py-3 text-sm font-bold cursor-pointer ${
                   isBotMode
                     ? 'border border-white/15 bg-[#0B0F17] text-white hover:border-white/30'

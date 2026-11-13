@@ -405,29 +405,26 @@ export const SkinInspector3D: React.FC<SkinInspector3DProps> = ({ skin }) => {
   return (
     <section className="relative overflow-hidden rounded-2xl border border-amber-500/30 bg-[#0E141F] shadow-2xl">
       <div className="grid grid-cols-1 lg:grid-cols-12">
-        {/* 3D WebGL Viewport */}
-        <div className="relative h-[300px] sm:h-[360px] lg:col-span-7 bg-[#0B0F17] cursor-grab active:cursor-grabbing">
-          <div ref={mountRef} className="touch-3d-canvas absolute inset-0" />
-
-          {/* Top-Left 3D Inspector Title + Polygon Count */}
-          <div className="pointer-events-none absolute top-3.5 left-4 space-y-0.5">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-amber-400">
-              Malha High-Poly Three.js · {polyCount.toLocaleString('pt-BR')} Polígonos
+        {/* 3D WebGL Viewport Column (Header + Unobstructed Canvas + Footer) */}
+        <div className="flex flex-col lg:col-span-7 bg-[#0B0F17]">
+          {/* Top Header Strip above 3D Canvas */}
+          <div className="flex flex-wrap items-start justify-between gap-2 border-b border-white/10 px-4 py-3">
+            <div className="min-w-0 space-y-0.5">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-amber-400">
+                Malha High-Poly Three.js · {polyCount.toLocaleString('pt-BR')} Polígonos
+              </div>
+              <div className="font-display text-base sm:text-lg font-extrabold text-white break-words">
+                {skin.name} ({move.name})
+              </div>
             </div>
-            <div className="font-display text-lg font-extrabold text-white">
-              {skin.name} ({move.name})
-            </div>
-          </div>
 
-          {/* Top-Right Wireframe Toggle */}
-          <div className="absolute top-3.5 right-4">
             <button
               type="button"
               onClick={() => setWireframe((w) => !w)}
-              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-bold transition-colors cursor-pointer ${
+              className={`shrink-0 inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-bold transition-colors cursor-pointer ${
                 wireframe
                   ? 'border-amber-400 bg-amber-500 text-slate-950'
-                  : 'border-white/15 bg-[#0B0F17]/90 text-slate-300 hover:text-white'
+                  : 'border-white/15 bg-[#131A26] text-slate-300 hover:text-white'
               }`}
             >
               <Grid className="h-3.5 w-3.5" />
@@ -435,14 +432,19 @@ export const SkinInspector3D: React.FC<SkinInspector3DProps> = ({ skin }) => {
             </button>
           </div>
 
-          {/* Bottom View Mode Switcher */}
-          <div className="absolute bottom-3 left-4 right-4 flex flex-wrap items-center justify-between gap-2">
-            <div className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-[#0B0F17]/90 px-2.5 py-1 text-[11px] text-slate-300">
-              <Rotate3d className="h-3.5 w-3.5 text-amber-400" />
+          {/* Unobstructed 3D WebGL Viewport */}
+          <div className="relative h-[260px] sm:h-[320px] w-full shrink-0 overflow-hidden bg-[#0B0F17] cursor-grab active:cursor-grabbing">
+            <div ref={mountRef} className="touch-3d-canvas absolute inset-0" />
+          </div>
+
+          {/* Bottom View Mode Switcher Strip below 3D Canvas */}
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 px-4 py-2.5">
+            <div className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-[#131A26] px-2.5 py-1 text-[11px] text-slate-300">
+              <Rotate3d className="h-3.5 w-3.5 text-amber-400 shrink-0" />
               <span>Arraste em qualquer direção para girar o modelo 3D</span>
             </div>
 
-            <div className="inline-flex rounded-lg border border-white/15 bg-[#0B0F17]/95 p-0.5 text-xs">
+            <div className="inline-flex flex-wrap rounded-lg border border-white/15 bg-[#131A26] p-0.5 text-xs">
               <button
                 type="button"
                 onClick={() => setViewMode('both')}

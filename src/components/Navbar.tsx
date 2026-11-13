@@ -54,15 +54,23 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <>
-    <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0B0F17]">
+    <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0B0F17]/90 backdrop-blur-xl shadow-lg">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-6 px-4 py-3.5 sm:px-6">
-        {/* Zone 1: Single-element Brand Wordmark */}
+        {/* Zone 1: Brand Wordmark with Metallic Gradient & Badge */}
         <button
           type="button"
           onClick={() => onSelectTab('arena')}
-          className="font-display text-xl font-extrabold tracking-tight text-white whitespace-nowrap shrink-0 cursor-pointer hover:text-amber-400 transition-colors"
+          className="group flex items-center gap-2.5 whitespace-nowrap shrink-0 cursor-pointer"
         >
-          Jokenpo 2
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 shadow-lg shadow-amber-500/25 group-hover:scale-105 transition-transform">
+            <Swords className="h-4 w-4 text-slate-950" />
+          </div>
+          <span className="font-display text-xl font-extrabold tracking-tight bg-gradient-to-r from-white via-amber-200 to-amber-400 bg-clip-text text-transparent drop-shadow-sm">
+            Jokenpo 2
+          </span>
+          <span className="hidden sm:inline-block rounded-full border border-amber-400/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-amber-300">
+            3D PRO
+          </span>
         </button>
 
         {/* Zone 2: 4 clean single-line text nav links */}
@@ -83,7 +91,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 >
                   {item.label}
                   {active && (
-                    <span className="absolute inset-x-0 -bottom-[15px] h-0.5 bg-amber-400" />
+                    <span className="absolute inset-x-0 -bottom-[15px] h-0.5 bg-gradient-to-r from-amber-400 to-yellow-300 shadow-[0_0_10px_rgba(245,158,11,0.8)]" />
                   )}
                 </button>
               );

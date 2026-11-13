@@ -1592,7 +1592,7 @@ export const TableArena3D: React.FC<TableArena3DProps> = ({
   return (
     <section
       ref={sectionRef}
-      className="relative h-[60dvh] min-h-[380px] sm:h-[66dvh] sm:min-h-[480px] lg:h-[70dvh] w-full flex-1 overflow-hidden rounded-xl sm:rounded-2xl border border-amber-500/20 bg-[#0E0705] select-none shadow-2xl"
+      className="relative h-full w-full flex-1 min-h-[200px] overflow-hidden rounded-xl sm:rounded-2xl border border-amber-500/20 bg-[#0E0705] select-none shadow-2xl"
     >
       {/* Isolated Three.js WebGL Mount filling 100% of the stage */}
       <div ref={mountRef} className="touch-3d-canvas absolute inset-0" />
@@ -1620,7 +1620,7 @@ export const TableArena3D: React.FC<TableArena3DProps> = ({
       )}
 
       {/* --- TOP-LEFT HUD: UNCLIPPED TABLE TITLE + OPPONENT/ALLY SEAT TAGS --- */}
-      <div className="pointer-events-none absolute top-4 left-3 sm:top-5 sm:left-5 z-10 max-w-[175px] sm:max-w-[270px] space-y-2">
+      <div className="pointer-events-none absolute top-4 left-3 sm:top-5 sm:left-5 z-10 max-w-[148px] sm:max-w-[270px] space-y-2">
         <div className="rounded-xl border border-amber-500/35 bg-[#120A07]/90 backdrop-blur-md px-3 py-2 shadow-xl">
           <div className="flex items-center gap-1.5 border-b border-amber-400/40 pb-1">
             <Flame className="h-3.5 w-3.5 shrink-0 text-amber-400" />
@@ -1713,7 +1713,7 @@ export const TableArena3D: React.FC<TableArena3DProps> = ({
       </div>
 
       {/* --- TOP-CENTER LIVE EMOTE BUBBLE (Leaves 3D Opponent's Face 100% Unobstructed!) --- */}
-      <div className="pointer-events-none absolute top-4 sm:top-5 left-1/2 z-10 -translate-x-1/2 flex flex-col items-center">
+      <div className="pointer-events-none absolute top-20 sm:top-5 left-1/2 z-10 -translate-x-1/2 flex flex-col items-center">
         <AnimatePresence>
           {activeEmoteBubble && (
             <motion.div
@@ -1770,7 +1770,7 @@ export const TableArena3D: React.FC<TableArena3DProps> = ({
             </span>
           </div>
 
-          <div className="rounded-xl border border-amber-500/35 bg-[#120A07]/90 backdrop-blur-md px-3 py-1.5 text-right shadow-xl">
+          <div className="rounded-xl border border-amber-500/35 bg-[#120A07]/90 backdrop-blur-md px-2 sm:px-3 py-1 sm:py-1.5 text-right shadow-xl">
             <div className="font-display text-xs sm:text-lg font-black uppercase tracking-wider text-white">
               {myPick
                 ? 'NA MESA!'

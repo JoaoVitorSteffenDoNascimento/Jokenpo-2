@@ -6,11 +6,15 @@ import {
   Crown,
   Dices,
   Eye,
+  Flame,
   Grid,
+  Layers,
+  MessageSquare,
   Rotate3d,
   Shirt,
   Sparkles,
   User,
+  Wand2,
 } from 'lucide-react';
 import {
   ARENA_TABLE_THEMES,
@@ -22,8 +26,8 @@ import {
   CHARACTER_OUTFITS,
   CHARACTER_PRESETS,
   CHARACTER_PROPS,
-  VICTORY_EMOTES,
   resolveCharacterCustomization,
+  VICTORY_EMOTES,
 } from '../../constants/gameData';
 import { CharacterCustomization, PlayerProfile } from '../../types/game';
 import { soundFx } from '../../utils/soundFx';
@@ -31,6 +35,7 @@ import { isMobileTouchDevice } from '../../utils/haptics';
 import {
   getMahoganyWoodTexture,
   getSaloonBumpTexture,
+  getThemedTableSurfaceTexture,
 } from './ProceduralPBR';
 import {
   buildInstancedSaloonCoins,
@@ -55,9 +60,9 @@ type CustomCategory =
   | 'outfit'
   | 'prop'
   | 'gun'
-  | 'tableTheme'
-  | 'cardAura'
-  | 'victoryEmote';
+  | 'table'
+  | 'aura'
+  | 'emote';
 
 export const CharacterCustomizer3D: React.FC<CharacterCustomizer3DProps> = ({
   player,
@@ -73,6 +78,10 @@ export const CharacterCustomizer3D: React.FC<CharacterCustomizer3DProps> = ({
   const [polyCount, setPolyCount] = React.useState(0);
   const [saving, setSaving] = React.useState(false);
   const [savedToast, setSavedToast] = React.useState(false);
+  const [emotePreviewBubble, setEmotePreviewBubble] = React.useState<{
+    icon: string;
+    phrase: string;
+  } | null>(null);
 
   // Sync draft if player profile updates externally
   React.useEffect(() => {
@@ -84,6 +93,14 @@ export const CharacterCustomizer3D: React.FC<CharacterCustomizer3DProps> = ({
   const currentArch =
     CHARACTER_ARCHETYPES.find((a) => a.id === draft.archetypeId) ??
     CHARACTER_ARCHETYPES[0];
+  const currentTableTheme =
+    ARENA_TABLE_THEMES.find((t) => t.id === draft.tableThemeId) ??
+    ARENA_TABLE_THEMES[0];
+  const currentAura =
+    CARD_AURAS.find((a) => a.id === draft.cardAuraId) ?? CARD_AURAS[0];
+  const currentEmote =
+    VICTORY_EMOTES.find((e) => e.id === draft.victoryEmoteId) ??
+    VICTORY_EMOTES[0];
 
   React.useEffect(() => {
     const container = mountRef.current;
@@ -152,32 +169,64 @@ export const CharacterCustomizer3D: React.FC<CharacterCustomizer3DProps> = ({
 
     const woodTex = getMahoganyWoodTexture();
     const bumpTex = getSaloonBumpTexture();
+    const tableSurfaceTex = getThemedTableSurfaceTexture(
+      draft.tableThemeId ?? 'saloon_mogno'
+    );
 
     const pedestal = new THREE.Mesh(
       new THREE.CylinderGeometry(1.78, 1.96, 0.26, 64),
       new THREE.MeshStandardMaterial({
         map: woodTex,
+        color: new THREE.Color(currentTableTheme.rimHex),
         bumpMap: bumpTex,
         bumpScale: 0.02,
-        roughness: 0.5,
-        metalness: 0.14,
+        roughness: 0.45,
+        metalness: 0.18,
       })
     );
     pedestal.position.y = -0.13;
     stageGroup.add(pedestal);
 
-    const trimRing = new THREE.Mesh(
-      new THREE.TorusGeometry(1.72, 0.032, 20, 64),
+    // Top tactical rune disc matching selected 3D Table Theme
+    const tableDisc = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.68, 1.68, 0.02, 64),
       new THREE.MeshStandardMaterial({
-        color: new THREE.Color(currentArch.accentHex),
-        emissive: new THREE.Color(currentArch.accentHex),
-        emissiveIntensity: 0.35,
-        roughness: 0.25,
+        map: tableSurfaceTex,
+        bumpMap: bumpTex,
+        bumpScale: 0.015,
+        roughness: 0.42,
+        metalness: 0.15,
+      })
+    );
+    tableDisc.position.y = 0.005;
+    stageGroup.add(tableDisc);
+
+    const trimRing = new THREE.Mesh(
+      new THREE.TorusGeometry(1.72, 0.035, 20, 64),
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color(currentAura.colorHex),
+        emissive: new THREE.Color(currentAura.colorHex),
+        emissiveIntensity: 0.5,
+        roughness: 0.22,
       })
     );
     trimRing.rotation.x = Math.PI / 2;
-    trimRing.position.y = 0.01;
+    trimRing.position.y = 0.015;
     stageGroup.add(trimRing);
+
+    // Aura floating halo ring around character
+    const auraRing = new THREE.Mesh(
+      new THREE.RingGeometry(0.95, 1.12, 48),
+      new THREE.MeshBasicMaterial({
+        color: new THREE.Color(currentAura.colorHex),
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.35,
+      })
+    );
+    auraRing.rotation.x = -Math.PI / 2;
+    auraRing.position.y = 0.025;
+    stageGroup.add(auraRing);
 
     // Instanced Brass Rivets around the Turntable Rim + Instanced Coin Stacks
     stageGroup.add(buildInstancedTableRivets(1.62, 24, 0.01));
@@ -361,7 +410,13 @@ export const CharacterCustomizer3D: React.FC<CharacterCustomizer3DProps> = ({
       disposeObject3D(scene);
       renderer.dispose();
     };
-  }, [draft, currentArch.accentHex, wireframe]);
+  }, [
+    draft,
+    currentArch.accentHex,
+    currentTableTheme.rimHex,
+    currentAura.colorHex,
+    wireframe,
+  ]);
 
   const handleRandomize = () => {
     soundFx.playSelect();
@@ -374,8 +429,21 @@ export const CharacterCustomizer3D: React.FC<CharacterCustomizer3DProps> = ({
       outfitId: randomItem(CHARACTER_OUTFITS).id,
       propId: randomItem(CHARACTER_PROPS).id,
       gunSkinId: randomItem(CHARACTER_GUN_SKINS).id,
+      tableThemeId: randomItem(ARENA_TABLE_THEMES).id,
+      cardAuraId: randomItem(CARD_AURAS).id,
+      victoryEmoteId: randomItem(VICTORY_EMOTES).id,
     };
     setDraft(next);
+  };
+
+  const handleApplyPreset = (presetCustom: CharacterCustomization) => {
+    soundFx.playVictory();
+    setDraft(presetCustom);
+    const em =
+      VICTORY_EMOTES.find((e) => e.id === presetCustom.victoryEmoteId) ??
+      VICTORY_EMOTES[0];
+    setEmotePreviewBubble({ icon: em.icon, phrase: em.phrase });
+    setTimeout(() => setEmotePreviewBubble(null), 2600);
   };
 
   const handleSave = async () => {
@@ -396,37 +464,41 @@ export const CharacterCustomizer3D: React.FC<CharacterCustomizer3DProps> = ({
   ) => {
     soundFx.playSelect();
     setDraft((prev) => ({ ...prev, [key]: val }));
+    if (key === 'victoryEmoteId') {
+      const em = VICTORY_EMOTES.find((e) => e.id === val);
+      if (em) {
+        setEmotePreviewBubble({ icon: em.icon, phrase: em.phrase });
+        setTimeout(() => setEmotePreviewBubble(null), 2600);
+      }
+    }
   };
 
   return (
     <section className="overflow-hidden rounded-2xl border border-amber-500/30 bg-[#131A26] shadow-2xl">
       <div className="grid grid-cols-1 lg:grid-cols-12">
         {/* Left: 3D Character Studio Viewport */}
-        <div className="relative h-[340px] sm:h-[460px] lg:col-span-5 bg-[#0B0F17] cursor-grab active:cursor-grabbing">
-          <div ref={mountRef} className="touch-3d-canvas absolute inset-0" />
-
-          {/* Top Left Character Badge + Polygon Count */}
-          <div className="pointer-events-none absolute top-3.5 left-4 right-32 space-y-0.5 rounded-xl border border-white/10 bg-[#0B0F17]/85 px-3 py-2">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400">
-              Malha 3D Esculpida · {polyCount.toLocaleString('pt-BR')} Polígonos
+        <div className="flex flex-col lg:col-span-5 bg-[#0B0F17] border-b lg:border-b-0 lg:border-r border-white/10">
+          {/* Header Strip above 3D Canvas */}
+          <div className="flex flex-wrap items-start justify-between gap-2 border-b border-white/10 px-4 py-3">
+            <div className="min-w-0 space-y-0.5">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400">
+                Malha 3D Esculpida · {polyCount.toLocaleString('pt-BR')} Polígonos
+              </div>
+              <div className="font-display text-base sm:text-lg font-extrabold text-white break-words">
+                {currentArch.name}
+              </div>
+              <p className="text-[11px] leading-snug text-slate-300 break-words">
+                {currentTableTheme.name} · {currentAura.name}
+              </p>
             </div>
-            <div className="font-display text-lg font-extrabold text-white">
-              {currentArch.name}
-            </div>
-            <p className="text-[11px] leading-snug text-slate-300">
-              {currentArch.subtitle}
-            </p>
-          </div>
 
-          {/* Top Right Wireframe Toggle */}
-          <div className="absolute top-3.5 right-3.5">
             <button
               type="button"
               onClick={() => setWireframe((w) => !w)}
-              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition-colors cursor-pointer ${
+              className={`shrink-0 inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition-colors cursor-pointer ${
                 wireframe
                   ? 'border-amber-400 bg-amber-500 text-slate-950'
-                  : 'border-white/15 bg-[#0B0F17]/90 text-slate-300 hover:text-white'
+                  : 'border-white/15 bg-[#131A26] text-slate-300 hover:text-white'
               }`}
             >
               <Grid className="h-3.5 w-3.5" />
@@ -434,9 +506,24 @@ export const CharacterCustomizer3D: React.FC<CharacterCustomizer3DProps> = ({
             </button>
           </div>
 
-          {/* Bottom Controls */}
-          <div className="absolute bottom-3.5 left-4 right-4 flex flex-wrap items-center justify-between gap-2">
-            <div className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-[#0B0F17]/90 px-2.5 py-1 text-[11px] text-slate-300">
+          {/* Unobstructed 3D WebGL Viewport */}
+          <div className="relative h-[300px] sm:h-[360px] lg:h-[440px] w-full shrink-0 overflow-hidden bg-[#0B0F17] cursor-grab active:cursor-grabbing">
+            <div ref={mountRef} className="touch-3d-canvas absolute inset-0" />
+          </div>
+
+          {/* Live Emote Bubble Preview Bar */}
+          {emotePreviewBubble && (
+            <div className="flex items-center justify-center gap-2 border-t border-amber-400/30 bg-amber-500/10 px-4 py-2 text-center">
+              <span className="text-lg">{emotePreviewBubble.icon}</span>
+              <span className="font-display text-xs font-extrabold text-amber-300">
+                “{emotePreviewBubble.phrase}”
+              </span>
+            </div>
+          )}
+
+          {/* Footer Controls Strip below 3D Canvas */}
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 px-4 py-2.5">
+            <div className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-[#131A26] px-2.5 py-1 text-[11px] text-slate-300">
               <Rotate3d className="h-3.5 w-3.5 text-amber-400" />
               <span>Arraste para girar 360°</span>
             </div>
@@ -444,24 +531,24 @@ export const CharacterCustomizer3D: React.FC<CharacterCustomizer3DProps> = ({
             <button
               type="button"
               onClick={handleRandomize}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/50 bg-[#131A26]/95 px-3 py-1.5 text-xs font-bold text-amber-300 hover:bg-amber-500 hover:text-slate-950 transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/50 bg-[#131A26] px-3 py-1.5 text-xs font-bold text-amber-300 hover:bg-amber-500 hover:text-slate-950 transition-colors cursor-pointer"
             >
               <Dices className="h-3.5 w-3.5" />
-              <span>Sortear Visual</span>
+              <span>Sortear Visual Completo</span>
             </button>
           </div>
         </div>
 
-        {/* Right: 6-Category Customization Selector */}
-        <div className="flex flex-col justify-between p-5 sm:p-6 lg:col-span-7 border-t lg:border-t-0 lg:border-l border-white/10 space-y-5">
+        {/* Right: 9-Category Customization Selector + 1-Click Presets */}
+        <div className="flex flex-col justify-between p-5 sm:p-6 lg:col-span-7 border-t lg:border-t-0 lg:border-l border-white/10 space-y-4">
           <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h2 className="font-display text-xl font-extrabold text-white">
-                  Personalizar Seu Personagem 3D
+                  Estúdio 3D de Personalização Completa
                 </h2>
                 <p className="text-xs text-slate-400">
-                  Modelos orgânicos de alta densidade (~25 mil polígonos) com InstancedMesh e Frustum Culling.
+                  Personalize personagem, trono, chapéu, visor, traje, arma, tema da Mesa 3D, aura das cartas e provocação!
                 </p>
               </div>
 
@@ -473,28 +560,31 @@ export const CharacterCustomizer3D: React.FC<CharacterCustomizer3DProps> = ({
               )}
             </div>
 
-            {/* Quick Presets Bar */}
-            <div className="space-y-1.5">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-amber-400">
-                Presets Lendários ({CHARACTER_PRESETS.length})
+            {/* 1-Click Character Loadout Presets */}
+            <div className="rounded-xl border border-amber-500/25 bg-[#0B0F17]/90 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-amber-400">
+                  <Wand2 className="h-3.5 w-3.5" />
+                  Presets Lendários (Equipar Pacote Completo em 1 Clique)
+                </span>
+                <span className="text-[11px] text-slate-400">
+                  Emote atual: {currentEmote.icon} {currentEmote.name}
+                </span>
               </div>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {CHARACTER_PRESETS.map((preset) => (
                   <button
                     key={preset.id}
                     type="button"
-                    onClick={() => {
-                      soundFx.playSelect();
-                      setDraft(resolveCharacterCustomization(preset.config, 0));
-                    }}
-                    className="rounded-xl border border-amber-500/25 bg-[#0B0F17] px-2.5 py-2 text-left hover:border-amber-400 hover:bg-amber-500/10 transition-colors cursor-pointer"
+                    onClick={() => handleApplyPreset(preset.config)}
+                    className="group flex flex-col justify-between rounded-lg border border-white/10 bg-[#131A26] p-2 text-left hover:border-amber-400/70 hover:bg-amber-500/10 transition-all cursor-pointer"
                   >
-                    <div className="font-display text-xs font-bold text-white truncate">
-                      {preset.name}
-                    </div>
-                    <div className="text-[10px] text-slate-400 truncate">
+                    <span className="text-[9px] font-extrabold uppercase tracking-wider text-amber-400">
                       {preset.badge}
-                    </div>
+                    </span>
+                    <span className="mt-0.5 font-display text-xs font-bold text-white group-hover:text-amber-200">
+                      {preset.name}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -503,15 +593,15 @@ export const CharacterCustomizer3D: React.FC<CharacterCustomizer3DProps> = ({
             {/* Category Tabs */}
             <div className="flex flex-wrap gap-1.5 rounded-xl border border-white/10 bg-[#0B0F17] p-1.5">
               {[
-                { id: 'archetype', label: 'Personagem (6)', icon: User },
-                { id: 'hat', label: 'Chapéu / Elmo (7)', icon: Crown },
-                { id: 'eyewear', label: 'Óculos / Visor (6)', icon: Eye },
-                { id: 'outfit', label: 'Traje & Cores (6)', icon: Shirt },
-                { id: 'prop', label: 'Acessório (5)', icon: Sparkles },
-                { id: 'gun', label: 'Revólver (4)', icon: Sparkles },
-                { id: 'tableTheme', label: `Mesa (${ARENA_TABLE_THEMES.length})`, icon: Grid },
-                { id: 'cardAura', label: `Aura (${CARD_AURAS.length})`, icon: Sparkles },
-                { id: 'victoryEmote', label: `Emote (${VICTORY_EMOTES.length})`, icon: Crown },
+                { id: 'archetype', label: `Personagem (${CHARACTER_ARCHETYPES.length})`, icon: User },
+                { id: 'hat', label: `Chapéu / Elmo (${CHARACTER_HATS.length})`, icon: Crown },
+                { id: 'eyewear', label: `Visor (${CHARACTER_EYEWEAR.length})`, icon: Eye },
+                { id: 'outfit', label: `Traje (${CHARACTER_OUTFITS.length})`, icon: Shirt },
+                { id: 'prop', label: `Acessório (${CHARACTER_PROPS.length})`, icon: Sparkles },
+                { id: 'gun', label: `Arma 3D (${CHARACTER_GUN_SKINS.length})`, icon: Sparkles },
+                { id: 'table', label: `Mesa 3D (${ARENA_TABLE_THEMES.length})`, icon: Layers },
+                { id: 'aura', label: `Aura (${CARD_AURAS.length})`, icon: Flame },
+                { id: 'emote', label: `Emote (${VICTORY_EMOTES.length})`, icon: MessageSquare },
               ].map((tab) => {
                 const Icon = tab.icon;
                 const active = activeCategory === tab.id;
@@ -520,9 +610,9 @@ export const CharacterCustomizer3D: React.FC<CharacterCustomizer3DProps> = ({
                     key={tab.id}
                     type="button"
                     onClick={() => setActiveCategory(tab.id as CustomCategory)}
-                    className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-colors cursor-pointer ${
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold transition-colors cursor-pointer ${
                       active
-                        ? 'bg-amber-500 text-slate-950'
+                        ? 'bg-amber-500 text-slate-950 shadow-sm'
                         : 'text-slate-300 hover:text-white'
                     }`}
                   >
@@ -737,102 +827,120 @@ export const CharacterCustomizer3D: React.FC<CharacterCustomizer3DProps> = ({
               </div>
             )}
 
-            {activeCategory === 'tableTheme' && (
+            {activeCategory === 'table' && (
               <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                 {ARENA_TABLE_THEMES.map((theme) => {
-                  const selected = draft.tableThemeId === theme.id;
+                  const selected =
+                    (draft.tableThemeId ?? 'saloon_mogno') === theme.id;
                   return (
                     <button
                       key={theme.id}
                       type="button"
                       onClick={() => updateField('tableThemeId', theme.id)}
-                      className={`flex items-center justify-between rounded-xl border p-3 text-left transition-all cursor-pointer ${
+                      className={`flex items-start justify-between rounded-xl border p-3.5 text-left transition-all cursor-pointer ${
                         selected
                           ? 'border-amber-400 bg-amber-500/15 ring-1 ring-amber-400/50'
                           : 'border-white/10 bg-[#0B0F17] hover:border-white/25'
                       }`}
                     >
-                      <div className="flex items-center gap-2.5">
-                        <span
-                          className="h-5 w-5 rounded-full border border-white/30"
-                          style={{ backgroundColor: theme.accentCss }}
-                        />
-                        <div>
-                          <div className="font-display text-xs font-bold text-white">
-                            {theme.name}
-                          </div>
-                          <div className="text-[10px] text-slate-400">
-                            {theme.subtitle}
-                          </div>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="h-4 w-4 rounded-md border border-white/30"
+                            style={{ backgroundColor: theme.accentCss }}
+                          />
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400">
+                            Arena 3D
+                          </span>
                         </div>
+                        <div className="font-display text-sm font-bold text-white">
+                          {theme.name}
+                        </div>
+                        <p className="text-[11px] leading-snug text-slate-400">
+                          {theme.subtitle}
+                        </p>
                       </div>
-                      {selected && <Check className="h-4 w-4 text-amber-400" />}
+                      {selected && (
+                        <Check className="h-4 w-4 shrink-0 text-amber-400" />
+                      )}
                     </button>
                   );
                 })}
               </div>
             )}
 
-            {activeCategory === 'cardAura' && (
+            {activeCategory === 'aura' && (
               <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                 {CARD_AURAS.map((aura) => {
-                  const selected = draft.cardAuraId === aura.id;
+                  const selected =
+                    (draft.cardAuraId ?? 'chama_real') === aura.id;
                   return (
                     <button
                       key={aura.id}
                       type="button"
                       onClick={() => updateField('cardAuraId', aura.id)}
-                      className={`flex items-center justify-between rounded-xl border p-3 text-left transition-all cursor-pointer ${
+                      className={`flex items-center justify-between rounded-xl border p-3.5 text-left transition-all cursor-pointer ${
                         selected
                           ? 'border-amber-400 bg-amber-500/15 ring-1 ring-amber-400/50'
                           : 'border-white/10 bg-[#0B0F17] hover:border-white/25'
                       }`}
                     >
-                      <div className="flex items-center gap-2.5">
+                      <div className="flex items-center gap-3">
                         <span
-                          className="h-5 w-5 rounded-full border border-white/30"
-                          style={{ backgroundColor: aura.cssColor }}
+                          className="h-6 w-6 rounded-full border border-white/40 shadow-md"
+                          style={{
+                            backgroundColor: aura.cssColor,
+                            boxShadow: `0 0 12px ${aura.cssColor}`,
+                          }}
                         />
                         <div>
-                          <div className="font-display text-xs font-bold text-white">
+                          <div className="font-display text-sm font-bold text-white">
                             {aura.name}
                           </div>
-                          <div className="text-[10px] text-slate-400">
-                            {aura.badge}
+                          <div className="text-[11px] text-slate-400">
+                            {aura.badge} · Trilha luminosa 3D na mesa
                           </div>
                         </div>
                       </div>
-                      {selected && <Check className="h-4 w-4 text-amber-400" />}
+                      {selected && (
+                        <Check className="h-4 w-4 shrink-0 text-amber-400" />
+                      )}
                     </button>
                   );
                 })}
               </div>
             )}
 
-            {activeCategory === 'victoryEmote' && (
+            {activeCategory === 'emote' && (
               <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                 {VICTORY_EMOTES.map((emote) => {
-                  const selected = draft.victoryEmoteId === emote.id;
+                  const selected =
+                    (draft.victoryEmoteId ?? 'saudacao_real') === emote.id;
                   return (
                     <button
                       key={emote.id}
                       type="button"
                       onClick={() => updateField('victoryEmoteId', emote.id)}
-                      className={`flex items-center justify-between rounded-xl border p-3 text-left transition-all cursor-pointer ${
+                      className={`flex items-start justify-between rounded-xl border p-3.5 text-left transition-all cursor-pointer ${
                         selected
                           ? 'border-amber-400 bg-amber-500/15 ring-1 ring-amber-400/50'
                           : 'border-white/10 bg-[#0B0F17] hover:border-white/25'
                       }`}
                     >
-                      <div>
-                        <div className="font-display text-xs font-bold text-white">
-                          {emote.icon} {emote.name}
-                        </div>
-                        <div className="text-[10px] text-slate-400">
-                          {emote.phrase}
+                      <div className="flex items-start gap-3">
+                        <span className="text-2xl">{emote.icon}</span>
+                        <div>
+                          <div className="font-display text-sm font-bold text-white">
+                            {emote.name}
+                          </div>
+                          <div className="mt-0.5 text-xs italic text-amber-300">
+                            “{emote.phrase}”
+                          </div>
                         </div>
                       </div>
-                      {selected && <Check className="h-4 w-4 text-amber-400" />}
+                      {selected && (
+                        <Check className="h-4 w-4 shrink-0 text-amber-400" />
+                      )}
                     </button>
                   );
                 })}
@@ -843,7 +951,7 @@ export const CharacterCustomizer3D: React.FC<CharacterCustomizer3DProps> = ({
           {/* Footer Save Bar */}
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4">
             <div className="text-xs text-slate-400">
-              Dica: Na partida 3D, pressione <strong className="text-amber-300">[C]</strong> para alternar entre 1ª Pessoa e ver seu Personagem 3D sentado na mesa!
+              Dica: Na partida 3D, pressione <strong className="text-amber-300">[C]</strong> para alternar entre 1ª Pessoa, 3ª Pessoa e Câmera 360°!
             </div>
 
             <button
@@ -854,7 +962,7 @@ export const CharacterCustomizer3D: React.FC<CharacterCustomizer3DProps> = ({
             >
               <Check className="h-4 w-4" />
               <span>
-                {saving ? 'Salvando Visual...' : 'Equipar Visual no Personagem'}
+                {saving ? 'Salvando Visual...' : 'Equipar Visual Completo'}
               </span>
             </button>
           </div>

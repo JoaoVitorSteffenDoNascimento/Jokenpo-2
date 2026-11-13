@@ -1,21 +1,32 @@
 import React from 'react';
+import { motion } from 'motion/react';
 import {
   BookOpen,
   Bot,
   Coins,
   Copy,
+  Flame,
   Gift,
   History,
+  Layers,
   Map as MapIcon,
+  Maximize2,
   Plus,
+  Sparkles,
   Swords,
   Trophy,
+  User,
   Users,
 } from 'lucide-react';
 import {
+  ARENA_TABLE_THEMES,
+  CARD_AURAS,
+  CHARACTER_ARCHETYPES,
   DAILY_REWARD_COINS,
   getEloInfo,
+  resolveCharacterCustomization,
   TROPHY_ROAD_MILESTONES,
+  VICTORY_EMOTES,
 } from '../constants/gameData';
 import {
   canClaimDailyReward,
@@ -36,6 +47,7 @@ import {
   TrophyProgressFeedback,
 } from '../types/game';
 import { soundFx } from '../utils/soundFx';
+import { requestArenaFullscreen } from '../utils/haptics';
 
 interface LobbyViewProps {
   player: PlayerProfile;
@@ -173,6 +185,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   const handleQuickQueue = async () => {
     setFeedback(null);
     setBusyAction('queue');
+    requestArenaFullscreen();
     try {
       const room = await findOrCreatePublicMatch({
         player,
@@ -194,6 +207,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   const handleCreatePrivate = async () => {
     setFeedback(null);
     setBusyAction('create');
+    requestArenaFullscreen();
     try {
       const room = await createMatchRoom({
         player,
@@ -217,6 +231,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
     e.preventDefault();
     setFeedback(null);
     setBusyAction('code');
+    requestArenaFullscreen();
     try {
       const room = await joinMatchByCode(joinCode, player);
       onEnterOnlineMatch(room.id);
@@ -233,6 +248,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   const handleAcceptInvite = async (invite: DuelInvite) => {
     setFeedback(null);
     setBusyAction(`invite_${invite.id}`);
+    requestArenaFullscreen();
     try {
       await respondDuelInvite(invite.id, 'accepted');
       const room = await joinMatchById(invite.matchId, player);
@@ -259,10 +275,26 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   const winRate =
     totalMatches > 0 ? Math.round((player.wins / totalMatches) * 100) : 0;
 
+  const customLoadout = resolveCharacterCustomization(
+    player.characterCustomization,
+    0
+  );
+  const equippedArch =
+    CHARACTER_ARCHETYPES.find((a) => a.id === customLoadout.archetypeId) ??
+    CHARACTER_ARCHETYPES[0];
+  const equippedTable =
+    ARENA_TABLE_THEMES.find((t) => t.id === customLoadout.tableThemeId) ??
+    ARENA_TABLE_THEMES[0];
+  const equippedAura =
+    CARD_AURAS.find((a) => a.id === customLoadout.cardAuraId) ?? CARD_AURAS[0];
+  const equippedEmote =
+    VICTORY_EMOTES.find((e) => e.id === customLoadout.victoryEmoteId) ??
+    VICTORY_EMOTES[0];
+
   return (
     <main className="mx-auto max-w-6xl space-y-8 px-4 py-8 sm:px-6">
       {/* Profile & Daily Reward Overview */}
-      <section className="rounded-2xl border border-white/10 bg-[#131A26] p-6">
+      <section className="relative overflow-hidden rounded-2xl border border-white/10 bg-slate-900/80 p-6 shadow-2xl backdrop-blur-xl">
         <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
@@ -301,9 +333,9 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                   {elo.nextTier ? `Faltam ${elo.trophiesToNext}` : 'Topo'}
                 </span>
               </div>
-              <div className="mt-1.5 h-2.5 w-full overflow-hidden rounded-full bg-[#0B0F17] p-0.5">
+              <div className="mt-1.5 h-2.5 w-full overflow-hidden rounded-full bg-[#0B0F17] p-0.5 border border-white/5">
                 <div
-                  className={`h-full rounded-full transition-all duration-1000 ease-out ${
+                  className={`h-full rounded-full transition-all duration-1000 ease-out shadow-[0_0_12px_rgba(245,158,11,0.5)] ${
                     animatingTrophies && recentTrophyProgress && recentTrophyProgress.delta >= 0
                       ? 'bg-gradient-to-r from-amber-500 via-yellow-300 to-emerald-400'
                       : 'bg-amber-500'
@@ -454,6 +486,68 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
         )}
       </section>
 
+      {/* 3D Loadout Showcase & Fullscreen Match Banner */}
+      <motion.section
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35 }}
+        className="rounded-2xl border border-amber-500/25 bg-gradient-to-r from-[#131A26] via-[#171210] to-[#131A26] p-5 shadow-xl"
+      >
+        <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
+          <div className="space-y-1">
+            <div className="inline-flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-amber-400">
+              <Sparkles className="h-3.5 w-3.5" />
+              <span>Seu Loadout 3D Equipado na Arena (Tela Cheia Automática)</span>
+            </div>
+            <p className="text-xs text-slate-300">
+              Ao iniciar qualquer partida, a mesa 3D abre automaticamente em Tela Cheia com seu personagem, tema de mesa, aura luminosa e provocações.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+            <div className="rounded-xl border border-white/10 bg-[#0B0F17]/90 px-3 py-2">
+              <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-400">
+                <User className="h-3 w-3" />
+                <span>Personagem 3D</span>
+              </div>
+              <div className="mt-0.5 font-display text-xs font-bold text-white truncate">
+                {equippedArch.name}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-[#0B0F17]/90 px-3 py-2">
+              <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-sky-400">
+                <Layers className="h-3 w-3" />
+                <span>Mesa 3D</span>
+              </div>
+              <div className="mt-0.5 font-display text-xs font-bold text-white truncate">
+                {equippedTable.name}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-[#0B0F17]/90 px-3 py-2">
+              <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                <Flame className="h-3 w-3" />
+                <span>Aura 3D</span>
+              </div>
+              <div className="mt-0.5 font-display text-xs font-bold text-white truncate">
+                {equippedAura.name}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-[#0B0F17]/90 px-3 py-2">
+              <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-300">
+                <Maximize2 className="h-3 w-3" />
+                <span>Emote de Mesa</span>
+              </div>
+              <div className="mt-0.5 font-display text-xs font-bold text-white truncate">
+                {equippedEmote.icon} {equippedEmote.name}
+              </div>
+            </div>
+          </div>
+        </div>
+      </motion.section>
+
       {/* Incoming Duel Invites */}
       {incomingInvites.length > 0 && (
         <section className="rounded-2xl border border-amber-500/35 bg-[#131A26] p-5 space-y-3">
@@ -500,7 +594,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
       {/* Main Arena Configurator + Public Rooms */}
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
         {/* Battle Setup */}
-        <section className="lg:col-span-7 rounded-2xl border border-white/10 bg-[#131A26] p-6 space-y-6">
+        <section className="lg:col-span-7 rounded-2xl border border-white/10 bg-slate-900/80 p-6 space-y-6 shadow-2xl backdrop-blur-xl">
           <div>
             <h2 className="font-display text-xl font-bold text-white">
               Configurar Duelo
@@ -516,7 +610,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
               <span className="block text-xs font-semibold text-slate-300 mb-2">
                 Modo de Equipe
               </span>
-              <div className="grid grid-cols-3 gap-2 rounded-xl bg-[#0B0F17] p-1">
+              <div className="grid grid-cols-3 gap-2 rounded-xl bg-[#0B0F17]/90 p-1.5 border border-white/5">
                 {(['1v1', '2v2', '3v3'] as MatchMode[]).map((m) => {
                   const active = mode === m;
                   const label = m === '1v1' ? '1v1 Solo' : m === '2v2' ? 'Duplas 2v2' : 'Trios 3v3';
@@ -525,13 +619,13 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                       key={m}
                       type="button"
                       onClick={() => setMode(m)}
-                      className={`rounded-lg py-2.5 text-xs font-bold transition-colors cursor-pointer ${
+                      className={`relative flex flex-col items-center justify-center rounded-lg py-2.5 px-2 text-xs font-bold transition-all duration-200 cursor-pointer ${
                         active
-                          ? 'bg-[#1A2333] text-amber-400'
-                          : 'text-slate-400 hover:text-white'
+                          ? 'bg-gradient-to-b from-[#1E293B] to-[#121A28] text-amber-400 border border-amber-400/40 shadow-lg shadow-amber-500/10'
+                          : 'text-slate-400 hover:text-white hover:bg-white/5'
                       }`}
                     >
-                      {label}
+                      <span>{label}</span>
                     </button>
                   );
                 })}
@@ -619,7 +713,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
               type="button"
               disabled={busyAction !== null}
               onClick={handleQuickQueue}
-              className="flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-5 py-3.5 text-sm font-bold text-slate-950 hover:bg-amber-400 disabled:opacity-60 transition-colors cursor-pointer"
+              className="relative overflow-hidden flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-500 px-5 py-3.5 text-sm font-extrabold text-slate-950 shadow-xl shadow-amber-500/25 hover:brightness-110 active:scale-95 disabled:opacity-60 transition-all cursor-pointer"
             >
               <Swords className="h-4 w-4" />
               <span>
@@ -630,11 +724,14 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
             <button
               type="button"
               disabled={busyAction !== null}
-              onClick={() => onStartBotMatch({ mode, format, isFriendly })}
-              className="flex items-center justify-center gap-2 rounded-xl border border-white/15 bg-[#0B0F17] px-5 py-3.5 text-sm font-bold text-white hover:border-amber-400/60 transition-colors cursor-pointer"
+              onClick={() => {
+                requestArenaFullscreen();
+                onStartBotMatch({ mode, format, isFriendly });
+              }}
+              className="flex items-center justify-center gap-2 rounded-xl border border-white/15 bg-slate-900/90 hover:border-amber-400/60 hover:bg-slate-800/90 px-5 py-3.5 text-sm font-bold text-white shadow-lg active:scale-95 transition-all cursor-pointer"
             >
               <Bot className="h-4 w-4 text-amber-400" />
-              <span>Jogar Agora vs Bot</span>
+              <span>Jogar Agora vs Bot (Tela Cheia 3D)</span>
             </button>
           </div>
 
@@ -670,7 +767,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
         </section>
 
         {/* Open Public Queue Rooms */}
-        <section className="lg:col-span-5 rounded-2xl border border-white/10 bg-[#131A26] p-6 flex flex-col">
+        <section className="lg:col-span-5 rounded-2xl border border-white/10 bg-slate-900/80 p-6 flex flex-col shadow-2xl backdrop-blur-xl">
           <div className="flex items-center justify-between border-b border-white/10 pb-4">
             <div>
               <h2 className="font-display text-lg font-bold text-white">
@@ -726,6 +823,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                     <button
                       type="button"
                       onClick={async () => {
+                        requestArenaFullscreen();
                         if (isAlreadyIn) {
                           onEnterOnlineMatch(room.id);
                           return;

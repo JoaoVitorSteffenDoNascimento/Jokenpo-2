@@ -14,6 +14,7 @@ import {
   MatchMode,
   PlayerProfile,
 } from '../types/game';
+import { requestArenaFullscreen } from '../utils/haptics';
 
 interface FriendsViewProps {
   player: PlayerProfile;
@@ -70,6 +71,7 @@ export const FriendsView: React.FC<FriendsViewProps> = ({
   const handleChallengeFriend = async (friendUid: string) => {
     setFeedback(null);
     setBusy(true);
+    requestArenaFullscreen();
     try {
       const room = await createMatchRoom({
         player,

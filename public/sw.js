@@ -1,4 +1,4 @@
-const CACHE_NAME = 'jokenpo2-pwa-v5';
+const CACHE_NAME = 'jokenpo2-pwa-v6';
 const PRECACHE_URLS = [
   './',
   './index.html',
@@ -69,8 +69,10 @@ self.addEventListener('fetch', (event) => {
           cached ||
           fetch(req)
             .then((res) => {
-              const clone = res.clone();
-              caches.open(CACHE_NAME).then((c) => c.put(req, clone));
+              if (res && res.ok) {
+                const clone = res.clone();
+                caches.open(CACHE_NAME).then((c) => c.put(req, clone));
+              }
               return res;
             })
             .catch(() => cached)
