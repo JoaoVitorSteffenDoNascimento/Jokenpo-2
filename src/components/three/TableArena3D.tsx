@@ -1592,7 +1592,7 @@ export const TableArena3D: React.FC<TableArena3DProps> = ({
   return (
     <section
       ref={sectionRef}
-      className="relative h-full w-full flex-1 min-h-0 overflow-hidden bg-[#0E0705] select-none"
+      className="relative h-[60dvh] min-h-[380px] sm:h-[66dvh] sm:min-h-[480px] lg:h-[70dvh] w-full flex-1 overflow-hidden rounded-xl sm:rounded-2xl border border-amber-500/20 bg-[#0E0705] select-none shadow-2xl"
     >
       {/* Isolated Three.js WebGL Mount filling 100% of the stage */}
       <div ref={mountRef} className="touch-3d-canvas absolute inset-0" />

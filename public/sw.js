@@ -1,4 +1,4 @@
-const CACHE_NAME = 'jokenpo2-pwa-v4';
+const CACHE_NAME = 'jokenpo2-pwa-v5';
 const PRECACHE_URLS = [
   './',
   './index.html',

@@ -876,7 +876,7 @@ export const ArenaView: React.FC<ArenaViewProps> = ({
     playerTeam === 'A' ? pairedA.has(player.uid) : pairedB.has(player.uid);
 
   return (
-    <main className="mx-auto max-w-6xl space-y-2.5 sm:space-y-4 px-2.5 py-2.5 sm:px-6 sm:py-5">
+    <main className="mx-auto flex min-h-[calc(100dvh-72px)] max-w-6xl flex-col gap-2.5 sm:gap-4 px-2.5 py-2.5 sm:px-6 sm:py-5">
       {/* Top Arena HUD */}
       <section className="flex flex-wrap items-center justify-between gap-2 sm:gap-4 rounded-xl sm:rounded-2xl border border-white/10 bg-[#131A26] px-3 py-2 sm:px-5 sm:py-3">
         <div className="flex items-center gap-2.5 sm:gap-4">

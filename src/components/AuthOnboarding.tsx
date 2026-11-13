@@ -225,8 +225,8 @@ export const AuthOnboarding: React.FC<AuthOnboardingProps> = ({
                 <div className="text-xs text-slate-400">Turmas INF & ETM</div>
               </div>
               <div>
-                <div className="font-mono-num text-2xl font-bold text-amber-400">5 Elos</div>
-                <div className="text-xs text-slate-400">Novato a Veterano</div>
+                <div className="font-mono-num text-2xl font-bold text-amber-400">12 Elos</div>
+                <div className="text-xs text-slate-400">Novato a Pro</div>
               </div>
               <div>
                 <div className="font-mono-num text-2xl font-bold text-white">18</div>

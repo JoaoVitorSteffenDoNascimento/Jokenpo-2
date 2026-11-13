@@ -13,12 +13,16 @@ import {
   User,
 } from 'lucide-react';
 import {
+  ARENA_TABLE_THEMES,
+  CARD_AURAS,
   CHARACTER_ARCHETYPES,
   CHARACTER_EYEWEAR,
   CHARACTER_GUN_SKINS,
   CHARACTER_HATS,
   CHARACTER_OUTFITS,
+  CHARACTER_PRESETS,
   CHARACTER_PROPS,
+  VICTORY_EMOTES,
   resolveCharacterCustomization,
 } from '../../constants/gameData';
 import { CharacterCustomization, PlayerProfile } from '../../types/game';
@@ -50,7 +54,10 @@ type CustomCategory =
   | 'eyewear'
   | 'outfit'
   | 'prop'
-  | 'gun';
+  | 'gun'
+  | 'tableTheme'
+  | 'cardAura'
+  | 'victoryEmote';
 
 export const CharacterCustomizer3D: React.FC<CharacterCustomizer3DProps> = ({
   player,
@@ -466,6 +473,33 @@ export const CharacterCustomizer3D: React.FC<CharacterCustomizer3DProps> = ({
               )}
             </div>
 
+            {/* Quick Presets Bar */}
+            <div className="space-y-1.5">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-amber-400">
+                Presets Lendários ({CHARACTER_PRESETS.length})
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {CHARACTER_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => {
+                      soundFx.playSelect();
+                      setDraft(resolveCharacterCustomization(preset.config, 0));
+                    }}
+                    className="rounded-xl border border-amber-500/25 bg-[#0B0F17] px-2.5 py-2 text-left hover:border-amber-400 hover:bg-amber-500/10 transition-colors cursor-pointer"
+                  >
+                    <div className="font-display text-xs font-bold text-white truncate">
+                      {preset.name}
+                    </div>
+                    <div className="text-[10px] text-slate-400 truncate">
+                      {preset.badge}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Category Tabs */}
             <div className="flex flex-wrap gap-1.5 rounded-xl border border-white/10 bg-[#0B0F17] p-1.5">
               {[
@@ -475,6 +509,9 @@ export const CharacterCustomizer3D: React.FC<CharacterCustomizer3DProps> = ({
                 { id: 'outfit', label: 'Traje & Cores (6)', icon: Shirt },
                 { id: 'prop', label: 'Acessório (5)', icon: Sparkles },
                 { id: 'gun', label: 'Revólver (4)', icon: Sparkles },
+                { id: 'tableTheme', label: `Mesa (${ARENA_TABLE_THEMES.length})`, icon: Grid },
+                { id: 'cardAura', label: `Aura (${CARD_AURAS.length})`, icon: Sparkles },
+                { id: 'victoryEmote', label: `Emote (${VICTORY_EMOTES.length})`, icon: Crown },
               ].map((tab) => {
                 const Icon = tab.icon;
                 const active = activeCategory === tab.id;
@@ -694,6 +731,108 @@ export const CharacterCustomizer3D: React.FC<CharacterCustomizer3DProps> = ({
                       {selected && (
                         <Check className="h-4 w-4 text-amber-400" />
                       )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {activeCategory === 'tableTheme' && (
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                {ARENA_TABLE_THEMES.map((theme) => {
+                  const selected = draft.tableThemeId === theme.id;
+                  return (
+                    <button
+                      key={theme.id}
+                      type="button"
+                      onClick={() => updateField('tableThemeId', theme.id)}
+                      className={`flex items-center justify-between rounded-xl border p-3 text-left transition-all cursor-pointer ${
+                        selected
+                          ? 'border-amber-400 bg-amber-500/15 ring-1 ring-amber-400/50'
+                          : 'border-white/10 bg-[#0B0F17] hover:border-white/25'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <span
+                          className="h-5 w-5 rounded-full border border-white/30"
+                          style={{ backgroundColor: theme.accentCss }}
+                        />
+                        <div>
+                          <div className="font-display text-xs font-bold text-white">
+                            {theme.name}
+                          </div>
+                          <div className="text-[10px] text-slate-400">
+                            {theme.subtitle}
+                          </div>
+                        </div>
+                      </div>
+                      {selected && <Check className="h-4 w-4 text-amber-400" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {activeCategory === 'cardAura' && (
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                {CARD_AURAS.map((aura) => {
+                  const selected = draft.cardAuraId === aura.id;
+                  return (
+                    <button
+                      key={aura.id}
+                      type="button"
+                      onClick={() => updateField('cardAuraId', aura.id)}
+                      className={`flex items-center justify-between rounded-xl border p-3 text-left transition-all cursor-pointer ${
+                        selected
+                          ? 'border-amber-400 bg-amber-500/15 ring-1 ring-amber-400/50'
+                          : 'border-white/10 bg-[#0B0F17] hover:border-white/25'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <span
+                          className="h-5 w-5 rounded-full border border-white/30"
+                          style={{ backgroundColor: aura.cssColor }}
+                        />
+                        <div>
+                          <div className="font-display text-xs font-bold text-white">
+                            {aura.name}
+                          </div>
+                          <div className="text-[10px] text-slate-400">
+                            {aura.badge}
+                          </div>
+                        </div>
+                      </div>
+                      {selected && <Check className="h-4 w-4 text-amber-400" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {activeCategory === 'victoryEmote' && (
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                {VICTORY_EMOTES.map((emote) => {
+                  const selected = draft.victoryEmoteId === emote.id;
+                  return (
+                    <button
+                      key={emote.id}
+                      type="button"
+                      onClick={() => updateField('victoryEmoteId', emote.id)}
+                      className={`flex items-center justify-between rounded-xl border p-3 text-left transition-all cursor-pointer ${
+                        selected
+                          ? 'border-amber-400 bg-amber-500/15 ring-1 ring-amber-400/50'
+                          : 'border-white/10 bg-[#0B0F17] hover:border-white/25'
+                      }`}
+                    >
+                      <div>
+                        <div className="font-display text-xs font-bold text-white">
+                          {emote.icon} {emote.name}
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          {emote.phrase}
+                        </div>
+                      </div>
+                      {selected && <Check className="h-4 w-4 text-amber-400" />}
                     </button>
                   );
                 })}
