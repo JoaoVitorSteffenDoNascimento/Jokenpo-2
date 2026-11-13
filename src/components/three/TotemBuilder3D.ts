@@ -14,10 +14,92 @@ import {
   SkinDefinition,
 } from '../../types/game';
 import {
+  getAnimalFurBumpTexture,
   getMechaHexScaleTexture,
   getOrnateCardBackTexture,
   getSaloonBumpTexture,
 } from './ProceduralPBR';
+
+// ============================================================================
+// RIG INTERFACES & PROCEDURAL ANIMATION CONTROLLERS
+// ============================================================================
+export interface EyeController {
+  eyeGroup: THREE.Group;
+  scleraMesh: THREE.Mesh;
+  irisMesh: THREE.Mesh;
+  pupilMesh: THREE.Mesh;
+  upperLidMesh: THREE.Mesh;
+  lowerLidMesh: THREE.Mesh;
+  blinkState: {
+    nextBlinkTime: number;
+    blinkProgress: number;
+    isBlinking: boolean;
+    isDoubleBlink?: boolean;
+  };
+  lookOffset: THREE.Vector2;
+}
+
+export type CharacterReactionState = 'idle' | 'throwing' | 'victory' | 'defeat';
+
+export interface SeatedCharacterRig {
+  root: THREE.Group;
+  chairGroup: THREE.Group;
+  spineBaseGroup: THREE.Group;
+  chestGroup: THREE.Group;
+  neckGroup: THREE.Group;
+  headGroup: THREE.Group;
+  leftArmGroup: THREE.Group;
+  rightArmGroup: THREE.Group;
+  leftHandGroup: THREE.Group;
+  handGroup: THREE.Group;
+  cardsInHand: THREE.Mesh[];
+  leftEye: EyeController;
+  rightEye: EyeController;
+  currentState: CharacterReactionState;
+  stateTimer: number;
+  updateAnimation: (
+    elapsed: number,
+    dtFactor: number,
+    desiredState: CharacterReactionState,
+    targetLookWorldPos?: THREE.Vector3 | null
+  ) => void;
+}
+
+export interface FingerBones {
+  root: THREE.Group;
+  proximalPhalanx: THREE.Mesh;
+  medialJoint: THREE.Group;
+  medialPhalanx: THREE.Mesh;
+  distalJoint: THREE.Group;
+  distalPhalanx: THREE.Mesh;
+  clawTip: THREE.Mesh;
+}
+
+export interface ThumbBones {
+  carpometacarpalJoint: THREE.Group;
+  proximalPhalanx: THREE.Mesh;
+  interphalangealJoint: THREE.Group;
+  distalPhalanx: THREE.Mesh;
+  clawTip: THREE.Mesh;
+}
+
+export interface ArticulatedHandRig {
+  group: THREE.Group;
+  wristGroup: THREE.Group;
+  palmMesh: THREE.Mesh;
+  gloveMesh: THREE.Mesh;
+  forearmMesh: THREE.Mesh;
+  cuffMesh: THREE.Mesh;
+  fingers: FingerBones[];
+  thumb: ThumbBones;
+}
+
+export interface TableCandleController {
+  group: THREE.Group;
+  flameMeshes: THREE.Mesh[];
+  flameLights: THREE.PointLight[];
+  updateFlames: (elapsed: number, dtFactor: number) => void;
+}
 
 // ============================================================================
 // GPU GEOMETRY CACHE (Prevents main-thread stutter when switching skins/rounds)
@@ -513,6 +595,8 @@ export function buildHighPolyCardMesh(options: {
   artTexture?: THREE.Texture;
   backTexture: THREE.Texture;
   accentHex?: string;
+  bumpMap?: THREE.Texture;
+  metalnessMap?: THREE.Texture;
 }): THREE.Group {
   const w = options.width ?? 0.5;
   const h = options.height ?? 0.72;
@@ -527,9 +611,10 @@ export function buildHighPolyCardMesh(options: {
   );
   const goldTrimMat = new THREE.MeshPhysicalMaterial({
     color: accentColor,
-    metalness: 0.85,
-    roughness: 0.24,
-    clearcoat: 0.65,
+    metalness: 0.92,
+    roughness: 0.20,
+    clearcoat: 0.85,
+    clearcoatRoughness: 0.15,
   });
 
   const coreMesh = new THREE.Mesh(
@@ -565,8 +650,11 @@ export function buildHighPolyCardMesh(options: {
       backGeo,
       new THREE.MeshStandardMaterial({
         map: options.frontTexture,
-        roughness: 0.68,
-        metalness: 0.08,
+        bumpMap: options.bumpMap,
+        bumpScale: options.bumpMap ? 0.018 : 0,
+        metalnessMap: options.metalnessMap,
+        roughness: 0.58,
+        metalness: options.metalnessMap ? 0.55 : 0.08,
       })
     );
     frontMesh.position.z = t * 0.52;
@@ -582,8 +670,11 @@ export function buildHighPolyCardMesh(options: {
       artGeo,
       new THREE.MeshStandardMaterial({
         map: options.artTexture,
-        roughness: 0.52,
-        metalness: 0.06,
+        bumpMap: options.bumpMap,
+        bumpScale: options.bumpMap ? 0.012 : 0,
+        metalnessMap: options.metalnessMap,
+        roughness: 0.48,
+        metalness: options.metalnessMap ? 0.45 : 0.06,
       })
     );
     artMesh.position.set(0, h * 0.02, t * 0.56);
@@ -1831,12 +1922,7 @@ export function buildSeatedCharacter3D(options: {
   variantIndex: number;
   customization?: Partial<CharacterCustomization> | null;
   detail?: DetailTier3D;
-}): {
-  root: THREE.Group;
-  headGroup: THREE.Group;
-  handGroup: THREE.Group;
-  cardsInHand: THREE.Mesh[];
-} {
+}): SeatedCharacterRig {
   const detail: DetailTier3D = options.detail ?? 'studio';
   const isMatchLod = detail === 'match';
   const root = new THREE.Group();
@@ -1853,38 +1939,53 @@ export function buildSeatedCharacter3D(options: {
     CHARACTER_OUTFITS[0];
 
   const hexBump = getMechaHexScaleTexture();
+  const furBump = getAnimalFurBumpTexture();
   const woodBump = getSaloonBumpTexture();
   const isCyber = Boolean(archMeta.isCyber);
+  const isJegue = custom.archetypeId === 'dom_jegue';
 
+  // Realistic Liar\\\'s Bar Fur / Skin PBR Shader with anisotropic directional fur sheen
   const skinMat = isMatchLod
     ? new THREE.MeshStandardMaterial({
         color: archMeta.skinColorHex,
-        roughness: isCyber ? 0.28 : 0.58,
-        metalness: isCyber ? 0.72 : 0.08,
-        bumpMap: isCyber ? hexBump : undefined,
-        bumpScale: isCyber ? 0.015 : 0,
+        roughness: isCyber ? 0.28 : 0.65,
+        metalness: isCyber ? 0.72 : 0.05,
+        bumpMap: isCyber ? hexBump : furBump,
+        bumpScale: isCyber ? 0.015 : 0.012,
       })
     : new THREE.MeshPhysicalMaterial({
         color: archMeta.skinColorHex,
-        roughness: isCyber ? 0.26 : 0.58,
-        metalness: isCyber ? 0.74 : 0.08,
-        bumpMap: isCyber ? hexBump : woodBump,
-        bumpScale: isCyber ? 0.02 : 0.01,
-        iridescence: isCyber ? 0.85 : 0.0,
-        iridescenceIOR: 1.4,
-        clearcoat: isCyber ? 0.72 : 0.18,
+        roughness: isCyber ? 0.26 : 0.64,
+        metalness: isCyber ? 0.74 : 0.04,
+        bumpMap: isCyber ? hexBump : furBump,
+        bumpScale: isCyber ? 0.022 : 0.024,
+        sheen: isCyber ? 0.0 : 0.85,
+        sheenRoughness: 0.35,
+        sheenColor: new THREE.Color(archMeta.skinColorHex).lerp(
+          new THREE.Color('#ffffff'),
+          0.25
+        ),
+        clearcoat: isCyber ? 0.72 : 0.12,
+        clearcoatRoughness: 0.25,
       });
+
+  // Authentic Muzzle Material (Bicolor mealy #d8cebc for dom_jegue)
+  const muzzleColor = isJegue
+    ? new THREE.Color('#d8cebc')
+    : new THREE.Color(archMeta.skinColorHex).multiplyScalar(1.12);
 
   const muzzleMat = isMatchLod
     ? new THREE.MeshStandardMaterial({
-        color: new THREE.Color(archMeta.skinColorHex).multiplyScalar(1.12),
+        color: muzzleColor,
         roughness: isCyber ? 0.26 : 0.54,
-        metalness: isCyber ? 0.72 : 0.06,
+        metalness: isCyber ? 0.72 : 0.05,
       })
     : new THREE.MeshPhysicalMaterial({
-        color: new THREE.Color(archMeta.skinColorHex).multiplyScalar(1.12),
+        color: muzzleColor,
         roughness: isCyber ? 0.24 : 0.52,
-        metalness: isCyber ? 0.76 : 0.06,
+        metalness: isCyber ? 0.76 : 0.05,
+        sheen: isCyber ? 0 : 0.6,
+        sheenRoughness: 0.4,
         clearcoat: 0.22,
       });
 
@@ -1900,6 +2001,12 @@ export function buildSeatedCharacter3D(options: {
         metalness: 0.26,
         bumpMap: woodBump,
         bumpScale: 0.01,
+        sheen: 0.55,
+        sheenRoughness: 0.38,
+        sheenColor: new THREE.Color(outfitMeta.vestHex).lerp(
+          new THREE.Color('#ffffff'),
+          0.2
+        ),
         clearcoat: 0.32,
       });
 
@@ -1913,8 +2020,17 @@ export function buildSeatedCharacter3D(options: {
         color: new THREE.Color(outfitMeta.vestHex).multiplyScalar(0.75),
         roughness: 0.38,
         metalness: 0.32,
+        sheen: 0.65,
+        sheenRoughness: 0.35,
         clearcoat: 0.45,
       });
+
+  const coatLiningMat = new THREE.MeshPhysicalMaterial({
+    color: new THREE.Color(outfitMeta.vestHex).multiplyScalar(1.35),
+    roughness: 0.35,
+    metalness: 0.22,
+    clearcoat: 0.4,
+  });
 
   const shirtMat = new THREE.MeshStandardMaterial({
     color: outfitMeta.shirtHex,
@@ -1933,11 +2049,11 @@ export function buildSeatedCharacter3D(options: {
       })
     : new THREE.MeshPhysicalMaterial({
         color: trimColor,
-        metalness: 0.9,
-        roughness: 0.2,
-        clearcoat: 0.75,
+        metalness: 0.92,
+        roughness: 0.18,
+        clearcoat: 0.85,
         emissive: trimColor,
-        emissiveIntensity: 0.14,
+        emissiveIntensity: 0.15,
       });
 
   const darkMetalMat = isMatchLod
@@ -1953,37 +2069,103 @@ export function buildSeatedCharacter3D(options: {
         clearcoat: 0.6,
       });
 
+  const teethMat = new THREE.MeshPhysicalMaterial({
+    color: 0xfaf5eb,
+    roughness: 0.25,
+    metalness: 0.05,
+    clearcoat: 0.8,
+  });
+
   const dummy = new THREE.Object3D();
 
-  // --- 1. ORGANIC SCULPTED TORSO, TAILORED COAT LAPELS, COLLAR & INSTANCED BUTTONS ---
-  const torsoMesh = new THREE.Mesh(getSculptedTorsoGeometry(detail), vestMat);
-  torsoMesh.position.set(0, 0.74, -0.02);
-  root.add(torsoMesh);
+  // --- KINEMATIC HIERARCHY ROOT & CARVED SALOON CHAIR ---
+  const chairGroup = new THREE.Group();
+  chairGroup.position.set(0, 0.72, -0.46);
+  const chairWoodMat = new THREE.MeshStandardMaterial({
+    color: 0x2e1309,
+    roughness: 0.52,
+    metalness: 0.14,
+  });
+  const chairLeatherMat = new THREE.MeshStandardMaterial({
+    color: 0x1a0b07,
+    roughness: 0.62,
+    metalness: 0.08,
+  });
 
-  // Muscular Neck & Shirt Collar connecting Torso to Head (Zero floating gap!)
-  const neckMesh = new THREE.Mesh(
+  const backrestPad = new THREE.Mesh(
     getCachedGeometry(
-      'char_neck_v2',
-      () => new THREE.CylinderGeometry(0.24, 0.29, 0.42, 36)
+      'saloon_chair_back_v2',
+      () => new RoundedBoxGeometry(1.18, 1.48, 0.14, 4, 0.04)
     ),
-    skinMat
+    chairLeatherMat
   );
-  neckMesh.position.set(0, 1.44, 0.02);
-  root.add(neckMesh);
+  backrestPad.position.set(0, 0.24, 0);
+  chairGroup.add(backrestPad);
 
-  const collarRing = new THREE.Mesh(
+  const topCrestRail = new THREE.Mesh(
     getCachedGeometry(
-      'char_collar_ring_v2',
-      () => new THREE.TorusGeometry(0.28, 0.065, 20, 40, Math.PI * 1.45)
+      'saloon_chair_crest_v2',
+      () => new RoundedBoxGeometry(1.32, 0.16, 0.18, 4, 0.04)
+    ),
+    chairWoodMat
+  );
+  topCrestRail.position.set(0, 1.0, 0.01);
+  chairGroup.add(topCrestRail);
+
+  const postGeo = getCachedGeometry(
+    'saloon_chair_post_v2',
+    () => new THREE.CylinderGeometry(0.068, 0.075, 1.78, 16)
+  );
+  const finialCapGeo = getCachedGeometry(
+    'saloon_chair_finial_v2',
+    () => new THREE.SphereGeometry(0.095, 16, 14)
+  );
+
+  for (const dir of [-1, 1]) {
+    const post = new THREE.Mesh(postGeo, chairWoodMat);
+    post.position.set(dir * 0.62, 0.18, 0.02);
+    chairGroup.add(post);
+
+    const finial = new THREE.Mesh(finialCapGeo, goldTrimMat);
+    finial.position.set(dir * 0.62, 1.12, 0.02);
+    chairGroup.add(finial);
+  }
+  root.add(chairGroup);
+
+  // --- ARTICULATED SPINE & CHEST HIERARCHY ---
+  const spineBaseGroup = new THREE.Group();
+  root.add(spineBaseGroup);
+
+  const chestGroup = new THREE.Group();
+  chestGroup.position.set(0, 0.74, -0.02);
+  spineBaseGroup.add(chestGroup);
+
+  // Sculpted Torso
+  const torsoMesh = new THREE.Mesh(getSculptedTorsoGeometry(detail), vestMat);
+  chestGroup.add(torsoMesh);
+
+  // Stand-up noble collar with contrasting lining
+  const standUpCollarOuter = new THREE.Mesh(
+    getCachedGeometry('char_standup_collar_outer_v3', () =>
+      new THREE.CylinderGeometry(0.32, 0.35, 0.26, 36, 1, true, 0, Math.PI * 1.6)
     ),
     coatLapelMat
   );
-  collarRing.rotation.x = Math.PI / 2 + 0.15;
-  collarRing.rotation.z = Math.PI * 0.78;
-  collarRing.position.set(0, 1.36, 0.01);
-  root.add(collarRing);
+  standUpCollarOuter.rotation.y = -Math.PI * 0.8;
+  standUpCollarOuter.position.set(0, 0.62, 0.02);
+  chestGroup.add(standUpCollarOuter);
 
-  // Dress Shirt Placket & Tailored Lapels
+  const standUpCollarInner = new THREE.Mesh(
+    getCachedGeometry('char_standup_collar_inner_v3', () =>
+      new THREE.CylinderGeometry(0.31, 0.34, 0.25, 36, 1, true, 0, Math.PI * 1.6)
+    ),
+    coatLiningMat
+  );
+  standUpCollarInner.rotation.y = -Math.PI * 0.8;
+  standUpCollarInner.position.set(0, 0.62, 0.02);
+  chestGroup.add(standUpCollarInner);
+
+  // Shirt Placket & Tailored Lapels with Gold Trim
   const shirtPlacket = new THREE.Mesh(
     getCachedGeometry(
       'char_shirt_placket_v2',
@@ -1992,31 +2174,50 @@ export function buildSeatedCharacter3D(options: {
     shirtMat
   );
   shirtPlacket.scale.set(1, 1, 0.35);
-  shirtPlacket.position.set(0, 1.06, 0.42);
-  root.add(shirtPlacket);
+  shirtPlacket.position.set(0, 0.32, 0.42);
+  chestGroup.add(shirtPlacket);
 
   const lapelGeo = getCachedGeometry(
     'char_lapel_v2',
     () => new RoundedBoxGeometry(0.14, 0.66, 0.08, 4, 0.025)
   );
+  const lapelTrimGeo = getCachedGeometry(
+    'char_lapel_trim_v3',
+    () => new RoundedBoxGeometry(0.025, 0.68, 0.082, 3, 0.01)
+  );
   for (const dir of [-1, 1]) {
     const lapel = new THREE.Mesh(lapelGeo, coatLapelMat);
-    lapel.position.set(dir * 0.18, 1.04, 0.44);
+    lapel.position.set(dir * 0.18, 0.30, 0.44);
     lapel.rotation.z = dir * 0.24;
     lapel.rotation.y = dir * 0.2;
-    root.add(lapel);
+    chestGroup.add(lapel);
+
+    const lTrim = new THREE.Mesh(lapelTrimGeo, goldTrimMat);
+    lTrim.position.set(dir * 0.24, 0.30, 0.45);
+    lTrim.rotation.z = dir * 0.24;
+    lTrim.rotation.y = dir * 0.2;
+    chestGroup.add(lTrim);
+  }
+
+  // Sculpted Epaulets (Shoulder Pads with Gold Fringe)
+  const epauletGeo = getCachedGeometry(
+    'char_epaulet_v3',
+    () => new RoundedBoxGeometry(0.34, 0.08, 0.28, 4, 0.03)
+  );
+  for (const dir of [-1, 1]) {
+    const epaulet = new THREE.Mesh(epauletGeo, goldTrimMat);
+    epaulet.position.set(dir * 0.62, 0.44, 0.02);
+    epaulet.rotation.z = -dir * 0.16;
+    chestGroup.add(epaulet);
   }
 
   // Silk Tie with Sculpted Knot
   const tieKnot = new THREE.Mesh(
-    getCachedGeometry(
-      'char_tie_knot_v2',
-      () => new THREE.OctahedronGeometry(0.068, 2)
-    ),
+    getCachedGeometry('char_tie_knot_v2', () => new THREE.OctahedronGeometry(0.068, 2)),
     goldTrimMat
   );
-  tieKnot.position.set(0, 1.24, 0.48);
-  root.add(tieKnot);
+  tieKnot.position.set(0, 0.50, 0.48);
+  chestGroup.add(tieKnot);
 
   const tieBlade = new THREE.Mesh(
     getCachedGeometry(
@@ -2025,10 +2226,10 @@ export function buildSeatedCharacter3D(options: {
     ),
     goldTrimMat
   );
-  tieBlade.position.set(0, 0.96, 0.49);
-  root.add(tieBlade);
+  tieBlade.position.set(0, 0.22, 0.49);
+  chestGroup.add(tieBlade);
 
-  // Instanced Waistcoat Brass Buttons (8 buttons in 1 draw call)
+  // Instanced Brass Buttons (8 buttons in 1 draw call)
   const btnGeo = getCachedGeometry(
     'char_waistcoat_btn_v2',
     () => new THREE.SphereGeometry(0.032, 18, 14)
@@ -2038,110 +2239,93 @@ export function buildSeatedCharacter3D(options: {
     for (let col = 0; col < 2; col++) {
       const idx = b * 2 + col;
       const side = col === 0 ? -1 : 1;
-      dummy.position.set(side * 0.13, 0.66 - b * 0.14, 0.49 - b * 0.015);
+      dummy.position.set(side * 0.13, -0.08 - b * 0.14, 0.49 - b * 0.015);
       dummy.scale.set(1, 1, 0.6);
       dummy.updateMatrix();
       btnInst.setMatrixAt(idx, dummy.matrix);
     }
   }
   btnInst.instanceMatrix.needsUpdate = true;
-  root.add(btnInst);
+  chestGroup.add(btnInst);
 
-  // --- 2. CONTINUOUS MUSCULAR CONNECTED ARMS (Shoulder -> Elbow -> Forearm -> Cuff -> Hand) ---
-  // Left Arm Curve: starts at Left Shoulder (-0.68, 1.15, 0.02), bends at Elbow (-0.82, 0.56, 0.42), rests Wrist on table (-0.42, 0.36, 1.02)
-  const armTubSeg = isMatchLod ? 22 : 48;
-  const armRadSeg = isMatchLod ? 14 : 28;
-  const leftArmGeo = getCachedGeometry(`char_left_arm_tube_${detail}_v2`, () => {
-    const curve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(-0.62, 1.14, 0.02),
-      new THREE.Vector3(-0.84, 0.78, 0.24),
-      new THREE.Vector3(-0.76, 0.46, 0.62),
-      new THREE.Vector3(-0.46, 0.36, 1.04),
-    ]);
-    return new THREE.TubeGeometry(curve, armTubSeg, 0.165, armRadSeg, false);
+  // Catenary Pocket Watch Chain
+  const chainGeo = getCachedGeometry('char_pocket_chain_v3', () => {
+    const pts: THREE.Vector3[] = [];
+    for (let p = 0; p <= 16; p++) {
+      const t = p / 16;
+      const px = -0.16 + t * 0.32;
+      const py = -0.22 - Math.sin(t * Math.PI) * 0.12;
+      const pz = 0.50 - Math.sin(t * Math.PI) * 0.03;
+      pts.push(new THREE.Vector3(px, py, pz));
+    }
+    const curve = new THREE.CatmullRomCurve3(pts);
+    return new THREE.TubeGeometry(curve, 18, 0.012, 10, false);
   });
-  const leftArmSleeve = new THREE.Mesh(leftArmGeo, vestMat);
-  root.add(leftArmSleeve);
+  const pocketChain = new THREE.Mesh(chainGeo, goldTrimMat);
+  chestGroup.add(pocketChain);
 
-  const leftCuff = new THREE.Mesh(
+  // --- NECK & HEAD GROUP ---
+  const neckGroup = new THREE.Group();
+  neckGroup.position.set(0, 0.66, 0.04);
+  chestGroup.add(neckGroup);
+
+  const neckMesh = new THREE.Mesh(
     getCachedGeometry(
-      'char_wrist_cuff_v2',
-      () => new THREE.TorusGeometry(0.165, 0.032, 16, 32)
+      'char_neck_v2',
+      () => new THREE.CylinderGeometry(0.24, 0.29, 0.42, 36)
     ),
-    goldTrimMat
+    skinMat
   );
-  leftCuff.position.set(-0.48, 0.37, 0.98);
-  leftCuff.rotation.y = 0.45;
-  root.add(leftCuff);
+  neckMesh.position.set(0, 0.06, 0);
+  neckGroup.add(neckMesh);
 
-  // Sculpted Left Hand & Articulated Fingers resting on the saloon table
-  const leftHandGroup = new THREE.Group();
-  leftHandGroup.position.set(-0.38, 0.32, 1.16);
-  leftHandGroup.rotation.y = 0.38;
-  root.add(leftHandGroup);
-
-  const palmGeo = getCachedGeometry(
-    'char_sculpted_palm_v2',
-    () => new THREE.SphereGeometry(0.18, 28, 24)
-  );
-  const leftPalm = new THREE.Mesh(palmGeo, skinMat);
-  leftPalm.scale.set(1.05, 0.52, 1.22);
-  leftHandGroup.add(leftPalm);
-
-  const fingerGeo = getCachedGeometry(
-    'char_finger_phalanx_v2',
-    () => new THREE.CapsuleGeometry(0.032, 0.14, 10, 16)
-  );
-  const clawGeo = getCachedGeometry(
-    'char_finger_claw_v2',
-    () => new THREE.ConeGeometry(0.024, 0.08, 12)
-  );
-  for (let f = 0; f < 4; f++) {
-    const fg = new THREE.Group();
-    fg.position.set((f - 1.5) * 0.072, -0.01, 0.18);
-    fg.rotation.x = Math.PI / 2 + 0.28;
-    fg.add(new THREE.Mesh(fingerGeo, skinMat));
-    const claw = new THREE.Mesh(clawGeo, darkMetalMat);
-    claw.position.y = 0.11;
-    fg.add(claw);
-    leftHandGroup.add(fg);
-  }
-
-  // Right Arm Curve: starts at Right Shoulder (0.62, 1.14, 0.02), bends at Elbow (0.84, 0.62, 0.38), rises to hold Cards at (0.34, 0.56, 1.02)
-  const rightArmGeo = getCachedGeometry(`char_right_arm_tube_${detail}_v2`, () => {
-    const curve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(0.62, 1.14, 0.02),
-      new THREE.Vector3(0.86, 0.76, 0.28),
-      new THREE.Vector3(0.72, 0.48, 0.68),
-      new THREE.Vector3(0.36, 0.56, 1.04),
-    ]);
-    return new THREE.TubeGeometry(curve, armTubSeg, 0.165, armRadSeg, false);
-  });
-  const rightArmSleeve = new THREE.Mesh(rightArmGeo, vestMat);
-  root.add(rightArmSleeve);
-
-  const rightCuff = new THREE.Mesh(
-    getCachedGeometry(
-      'char_wrist_cuff_v2',
-      () => new THREE.TorusGeometry(0.165, 0.032, 16, 32)
-    ),
-    goldTrimMat
-  );
-  rightCuff.position.set(0.41, 0.55, 0.98);
-  rightCuff.rotation.y = -0.45;
-  root.add(rightCuff);
-
-  // --- 3. HIGH-POLY SCULPTED HEAD GROUP (Animated in the render loop) ---
   const headGroup = new THREE.Group();
-  headGroup.position.set(0, 1.78, 0.08);
-  root.add(headGroup);
+  headGroup.position.set(0, 0.34, 0.04);
+  neckGroup.add(headGroup);
 
+  // Cranium
   const cranium = new THREE.Mesh(
     getSculptedHeadGeometry(custom.archetypeId, detail),
     skinMat
   );
   headGroup.add(cranium);
 
+  // Supraorbital brow ridge sculpted in high relief
+  const browGeo = getCachedGeometry(
+    'char_brow_ridge_v3',
+    () => new RoundedBoxGeometry(0.56, 0.11, 0.22, 5, 0.04)
+  );
+  const browMesh = new THREE.Mesh(browGeo, skinMat);
+  browMesh.position.set(0, 0.16, 0.38);
+  browMesh.scale.set(1, 0.75, 1);
+  headGroup.add(browMesh);
+
+  // Expressive 3D Eyebrows
+  const eyebrowGeo = getCachedGeometry(
+    'char_eyebrow_v3',
+    () => new RoundedBoxGeometry(0.20, 0.042, 0.06, 4, 0.018)
+  );
+  for (const dir of [-1, 1]) {
+    const eb = new THREE.Mesh(eyebrowGeo, darkMetalMat);
+    eb.position.set(dir * 0.19, 0.19, 0.46);
+    eb.rotation.z = dir * (isJegue ? -0.15 : 0.08);
+    headGroup.add(eb);
+  }
+
+  // Volumetric Cheek Tufts (furry Liar\\\'s Bar jowls)
+  const cheekTuftGeo = getCachedGeometry(
+    'char_cheek_tuft_v3',
+    () => new THREE.ConeGeometry(0.12, 0.28, 14)
+  );
+  for (const dir of [-1, 1]) {
+    const tuft = new THREE.Mesh(cheekTuftGeo, skinMat);
+    tuft.position.set(dir * 0.42, -0.06, 0.16);
+    tuft.rotation.z = dir * 1.35;
+    tuft.rotation.y = dir * 0.4;
+    headGroup.add(tuft);
+  }
+
+  // Muzzle
   const muzzle = new THREE.Mesh(
     getSculptedMuzzleGeometry(custom.archetypeId, detail),
     muzzleMat
@@ -2150,7 +2334,7 @@ export function buildSeatedCharacter3D(options: {
   muzzle.rotation.x = 0.06;
   headGroup.add(muzzle);
 
-  // Wet Nose Tip / Cyber Nose Sensor on Muzzle Tip
+  // Dilated Nostrils & Nose Tip
   const noseTip = new THREE.Mesh(
     getCachedGeometry(
       'char_nose_tip_v2',
@@ -2162,7 +2346,18 @@ export function buildSeatedCharacter3D(options: {
   noseTip.position.set(0, -0.02, 0.68);
   headGroup.add(noseTip);
 
-  // Sculpted Lower Jaw / Chin
+  const nostrilGeo = getCachedGeometry(
+    'char_nostril_v3',
+    () => new THREE.SphereGeometry(0.028, 14, 12)
+  );
+  for (const dir of [-1, 1]) {
+    const nostril = new THREE.Mesh(nostrilGeo, darkMetalMat);
+    nostril.position.set(dir * 0.065, -0.04, 0.67);
+    nostril.scale.set(1, 0.6, 1.2);
+    headGroup.add(nostril);
+  }
+
+  // Lower Jaw with Sculpted Chin
   const lowerJaw = new THREE.Mesh(
     getCachedGeometry(
       'char_lower_jaw_v2',
@@ -2174,59 +2369,166 @@ export function buildSeatedCharacter3D(options: {
   lowerJaw.position.set(0, -0.25, 0.32);
   headGroup.add(lowerJaw);
 
-  const isFlameEyes = custom.eyewearId === 'olhos_chama';
-  const eyeScleraMat = new THREE.MeshPhysicalMaterial({
-    color: isFlameEyes ? 0xff4500 : isCyber ? 0x083344 : 0xfef3c7,
-    emissive: isFlameEyes ? 0xef4444 : isCyber ? 0x06b6d4 : 0xd97706,
-    emissiveIntensity: isFlameEyes ? 0.65 : 0.25,
-    roughness: 0.14,
-    clearcoat: 1.0,
-  });
+  // Visible Teeth / Fangs (Bluffing grimace authentic to Liar\\\'s Bar)
+  const toothGeo = getCachedGeometry(
+    'char_tooth_v3',
+    () => new THREE.ConeGeometry(0.022, 0.075, 12)
+  );
+  for (const dir of [-1, 1]) {
+    const t = new THREE.Mesh(toothGeo, teethMat);
+    t.position.set(dir * (isJegue ? 0.055 : 0.095), -0.18, 0.58);
+    t.rotation.x = Math.PI - 0.2;
+    headGroup.add(t);
+  }
 
-  // Detailed Eye Sockets, Eyelids, Sclera & Iris/Pupils
+  // Realistic Eyes with Iris Ring, Specular Sclera & Eyelid Blink
   const eyeBallGeo = getCachedGeometry(
     'char_eyeball_v2',
     () => new THREE.SphereGeometry(0.078, 28, 24)
   );
+  const irisGeo = getCachedGeometry(
+    'char_iris_v3',
+    () => new THREE.CylinderGeometry(0.048, 0.048, 0.015, 24)
+  );
   const pupilGeo = getCachedGeometry(
     'char_pupil_v2',
-    () => new THREE.SphereGeometry(0.042, 20, 16)
+    () => new THREE.SphereGeometry(0.032, 20, 16)
   );
   const eyelidGeo = getCachedGeometry(
     'char_eyelid_v2',
-    () =>
-      new THREE.SphereGeometry(
-        0.086,
-        24,
-        16,
-        0,
-        Math.PI * 2,
-        0,
-        Math.PI * 0.48
-      )
+    () => new THREE.SphereGeometry(0.086, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.52)
   );
 
-  for (const dir of [-1, 1]) {
+  const isFlameEyes = custom.eyewearId === 'olhos_chama';
+  const irisColor = isFlameEyes
+    ? new THREE.Color(0xef4444)
+    : isCyber
+    ? new THREE.Color(0x06b6d4)
+    : isJegue
+    ? new THREE.Color(0xd97706)
+    : new THREE.Color(archMeta.accentHex);
+
+  const scleraMat = new THREE.MeshPhysicalMaterial({
+    color: 0xffffff,
+    roughness: 0.08,
+    metalness: 0.0,
+    clearcoat: 1.0,
+    clearcoatRoughness: 0.1,
+  });
+
+  const irisMat = new THREE.MeshPhysicalMaterial({
+    color: irisColor,
+    emissive: irisColor,
+    emissiveIntensity: 0.28,
+    roughness: 0.2,
+    metalness: 0.1,
+    clearcoat: 0.8,
+  });
+
+  const pupilMat = new THREE.MeshBasicMaterial({ color: 0x050505 });
+
+  const createEyeController = (dir: number): EyeController => {
     const eyeGroup = new THREE.Group();
     eyeGroup.position.set(dir * 0.19, 0.08, 0.37);
 
-    const sclera = new THREE.Mesh(eyeBallGeo, eyeScleraMat);
-    eyeGroup.add(sclera);
+    const scleraMesh = new THREE.Mesh(eyeBallGeo, scleraMat);
+    eyeGroup.add(scleraMesh);
 
-    const pupil = new THREE.Mesh(pupilGeo, darkMetalMat);
-    pupil.position.z = 0.052;
-    eyeGroup.add(pupil);
+    const irisMesh = new THREE.Mesh(irisGeo, irisMat);
+    irisMesh.rotation.x = Math.PI / 2;
+    irisMesh.position.z = 0.065;
+    eyeGroup.add(irisMesh);
 
-    const upperLid = new THREE.Mesh(eyelidGeo, skinMat);
-    upperLid.rotation.x = -0.22;
-    upperLid.rotation.z = -dir * 0.15;
-    eyeGroup.add(upperLid);
+    const pupilMesh = new THREE.Mesh(pupilGeo, pupilMat);
+    pupilMesh.position.z = 0.072;
+    if (isJegue) pupilMesh.scale.set(1.3, 0.75, 1);
+    eyeGroup.add(pupilMesh);
+
+    const upperLidMesh = new THREE.Mesh(eyelidGeo, skinMat);
+    upperLidMesh.rotation.x = -0.25;
+    upperLidMesh.rotation.z = -dir * 0.15;
+    eyeGroup.add(upperLidMesh);
+
+    const lowerLidMesh = new THREE.Mesh(eyelidGeo, skinMat);
+    lowerLidMesh.rotation.x = Math.PI - 0.15;
+    lowerLidMesh.rotation.z = dir * 0.15;
+    eyeGroup.add(lowerLidMesh);
 
     headGroup.add(eyeGroup);
-  }
 
-  // --- 4. ARCHETYPE-SPECIFIC HIGH-POLY ANATOMY ---
-  if (custom.archetypeId === 'minotauro_chef') {
+    return {
+      eyeGroup,
+      scleraMesh,
+      irisMesh,
+      pupilMesh,
+      upperLidMesh,
+      lowerLidMesh,
+      blinkState: {
+        nextBlinkTime: 2.5 + Math.random() * 2.5,
+        blinkProgress: 0,
+        isBlinking: false,
+        isDoubleBlink: false,
+      },
+      lookOffset: new THREE.Vector2(0, 0),
+    };
+  };
+
+  const leftEye = createEyeController(-1);
+  const rightEye = createEyeController(1);
+
+  // --- ARCHETYPE ANATOMY: Authentic Dom Jegue, Minotaur, Wolf, Fox, Bear ---
+  if (isJegue) {
+    // Dom Jegue Mane (dark sculpted hair running along crest)
+    const maneGeo = getCachedGeometry(
+      'jegue_mane_v3',
+      () => new RoundedBoxGeometry(0.12, 0.54, 0.42, 4, 0.03)
+    );
+    const maneMat = new THREE.MeshPhysicalMaterial({
+      color: 0x1f1712,
+      roughness: 0.72,
+      sheen: 0.7,
+      sheenRoughness: 0.4,
+    });
+    const mane = new THREE.Mesh(maneGeo, maneMat);
+    mane.position.set(0, 0.44, -0.06);
+    mane.rotation.x = -0.28;
+    headGroup.add(mane);
+
+    // Authentic Long Donkey Ears angled laterally (~28° / Math.PI * 0.15) with furry inner cavity
+    // NOT RABBIT EARS! Curved leaf shape tapering at tip, open sideways
+    for (const dir of [-1, 1]) {
+      const earGroup = new THREE.Group();
+      earGroup.position.set(dir * 0.22, 0.38, -0.05);
+      earGroup.rotation.z = -dir * 0.48;
+      earGroup.rotation.x = -0.18;
+
+      const earOuterGeo = getCachedGeometry(`jegue_ear_outer_${dir}_v3`, () => {
+        const curve = new THREE.CatmullRomCurve3([
+          new THREE.Vector3(0, 0, 0),
+          new THREE.Vector3(dir * 0.08, 0.38, -0.04),
+          new THREE.Vector3(dir * 0.14, 0.82, 0.02),
+        ]);
+        return new THREE.TubeGeometry(curve, 28, 0.098, 20, false);
+      });
+      const earOuter = new THREE.Mesh(earOuterGeo, skinMat);
+      earOuter.scale.set(1, 1, 0.48);
+      earGroup.add(earOuter);
+
+      const innerEarGeo = getCachedGeometry(`jegue_ear_inner_${dir}_v3`, () => {
+        const curve = new THREE.CatmullRomCurve3([
+          new THREE.Vector3(0, 0.08, 0.02),
+          new THREE.Vector3(dir * 0.06, 0.36, -0.02),
+          new THREE.Vector3(dir * 0.10, 0.74, 0.02),
+        ]);
+        return new THREE.TubeGeometry(curve, 24, 0.065, 16, false);
+      });
+      const innerEar = new THREE.Mesh(innerEarGeo, muzzleMat);
+      innerEar.scale.set(0.9, 0.9, 0.35);
+      earGroup.add(innerEar);
+
+      headGroup.add(earGroup);
+    }
+  } else if (custom.archetypeId === 'minotauro_chef') {
     const hornMat = new THREE.MeshPhysicalMaterial({
       color: 0xd6d3d1,
       roughness: 0.36,
@@ -2255,27 +2557,6 @@ export function buildSeatedCharacter3D(options: {
     noseRing.rotation.x = 0.35;
     noseRing.position.set(0, -0.18, 0.69);
     headGroup.add(noseRing);
-  } else if (custom.archetypeId === 'mecha_camaleao') {
-    const crestGeo = getCachedGeometry('mecha_crest_v2', () => {
-      const crestShape = new THREE.Shape();
-      crestShape.moveTo(0, 0);
-      crestShape.quadraticCurveTo(0.45, 0.35, 0.15, 0.78);
-      crestShape.quadraticCurveTo(-0.25, 0.55, -0.35, 0);
-      const g = new THREE.ExtrudeGeometry(crestShape, {
-        depth: 0.22,
-        bevelEnabled: true,
-        bevelSegments: 5,
-        bevelSize: 0.035,
-        bevelThickness: 0.035,
-        curveSegments: 32,
-      });
-      g.center();
-      return g;
-    });
-    const crestMesh = new THREE.Mesh(crestGeo, skinMat);
-    crestMesh.rotation.y = Math.PI / 2;
-    crestMesh.position.set(0, 0.42, -0.15);
-    headGroup.add(crestMesh);
   } else if (custom.archetypeId === 'raposa_dama') {
     for (const dir of [-1, 1]) {
       const earGeo = getCachedGeometry(`fox_ear_${dir}_v2`, () => {
@@ -2336,24 +2617,30 @@ export function buildSeatedCharacter3D(options: {
 
       headGroup.add(earGroup);
     }
-  } else {
-    // dom_jegue: Tall Sculpted Curved Donkey Ears
-    for (const dir of [-1, 1]) {
-      const earGeo = getCachedGeometry(`donkey_ear_${dir}_v2`, () => {
-        const curve = new THREE.CatmullRomCurve3([
-          new THREE.Vector3(dir * 0.22, 0.34, -0.06),
-          new THREE.Vector3(dir * 0.34, 0.68, -0.08),
-          new THREE.Vector3(dir * 0.38, 0.98, 0.02),
-        ]);
-        return new THREE.TubeGeometry(curve, 32, 0.095, 24, false);
+  } else if (custom.archetypeId === 'mecha_camaleao') {
+    const crestGeo = getCachedGeometry('mecha_crest_v2', () => {
+      const crestShape = new THREE.Shape();
+      crestShape.moveTo(0, 0);
+      crestShape.quadraticCurveTo(0.45, 0.35, 0.15, 0.78);
+      crestShape.quadraticCurveTo(-0.25, 0.55, -0.35, 0);
+      const g = new THREE.ExtrudeGeometry(crestShape, {
+        depth: 0.22,
+        bevelEnabled: true,
+        bevelSegments: 5,
+        bevelSize: 0.035,
+        bevelThickness: 0.035,
+        curveSegments: 32,
       });
-      const ear = new THREE.Mesh(earGeo, skinMat);
-      ear.scale.set(1, 1, 0.52);
-      headGroup.add(ear);
-    }
+      g.center();
+      return g;
+    });
+    const crestMesh = new THREE.Mesh(crestGeo, skinMat);
+    crestMesh.rotation.y = Math.PI / 2;
+    crestMesh.position.set(0, 0.42, -0.15);
+    headGroup.add(crestMesh);
   }
 
-  // --- 5. EYEWEAR / VISORS ---
+  // --- ACCESSORIES: EYEWEAR, HATS, PROPS ---
   if (custom.eyewearId === 'visor_mecha') {
     const visor = new THREE.Mesh(
       getCachedGeometry(
@@ -2412,7 +2699,6 @@ export function buildSeatedCharacter3D(options: {
     headGroup.add(strap);
   }
 
-  // --- 6. HEADGEAR / HATS (Sculpted Lathe & Curved Brims) ---
   if (custom.hatId === 'fedora_saloon') {
     const fedoraGeo = getCachedGeometry('hat_fedora_lathe_v2', () => {
       const pts = [
@@ -2522,7 +2808,6 @@ export function buildSeatedCharacter3D(options: {
       for (let i = 0; i < pos.count; i++) {
         const x = pos.getX(i);
         const y = pos.getY(i);
-        // Curve left & right cowboy brim edges upward
         pos.setY(i, y + Math.pow(Math.abs(x), 2.1) * 0.24);
       }
       g.computeVertexNormals();
@@ -2547,7 +2832,6 @@ export function buildSeatedCharacter3D(options: {
     headGroup.add(starBadge);
   }
 
-  // --- 7. MOUTH / FACE PROPS ---
   if (custom.propId === 'charuto_chefe') {
     const cigarGroup = new THREE.Group();
     cigarGroup.position.set(0.16, -0.2, 0.64);
@@ -2603,25 +2887,141 @@ export function buildSeatedCharacter3D(options: {
     }
   }
 
-  // --- 8. RIGHT HAND WITH ARTICULATED FINGERS HOLDING FANNED HIGH-POLY 3D CARDS ---
-  const handGroup = new THREE.Group();
-  handGroup.position.set(0.32, 0.58, 1.14);
-  root.add(handGroup);
+  // --- CONNECTED ARMS ANCHORED TO CHESTGROUP ---
+  const leftArmGroup = new THREE.Group();
+  leftArmGroup.position.set(-0.62, 0.40, 0.04);
+  chestGroup.add(leftArmGroup);
 
-  const rightPalm = new THREE.Mesh(palmGeo, skinMat);
-  rightPalm.scale.set(1.05, 0.62, 1.15);
-  handGroup.add(rightPalm);
+  const armTubSeg = isMatchLod ? 22 : 48;
+  const armRadSeg = isMatchLod ? 14 : 28;
 
+  const leftArmGeo = getCachedGeometry(
+    `char_left_arm_connected_${detail}_v3`,
+    () => {
+      const curve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(-0.22, -0.36, 0.22),
+        new THREE.Vector3(-0.14, -0.68, 0.60),
+        new THREE.Vector3(0.16, -0.78, 1.02),
+      ]);
+      return new THREE.TubeGeometry(curve, armTubSeg, 0.165, armRadSeg, false);
+    }
+  );
+  const leftArmMesh = new THREE.Mesh(leftArmGeo, vestMat);
+  leftArmGroup.add(leftArmMesh);
+
+  const leftCuff = new THREE.Mesh(
+    getCachedGeometry(
+      'char_wrist_cuff_v2',
+      () => new THREE.TorusGeometry(0.165, 0.032, 16, 32)
+    ),
+    goldTrimMat
+  );
+  leftCuff.position.set(0.14, -0.77, 0.96);
+  leftCuff.rotation.y = 0.45;
+  leftArmGroup.add(leftCuff);
+
+  // Left Hand Resting securely on table (y >= 0.012 - NO SINKING!)
+  const leftHandGroup = new THREE.Group();
+  leftHandGroup.position.set(0.24, -0.80, 1.14);
+  leftHandGroup.rotation.y = 0.38;
+  leftArmGroup.add(leftHandGroup);
+
+  const palmGeo = getCachedGeometry(
+    'char_sculpted_palm_v2',
+    () => new THREE.SphereGeometry(0.18, 28, 24)
+  );
+  const leftPalm = new THREE.Mesh(palmGeo, skinMat);
+  leftPalm.scale.set(1.05, 0.52, 1.22);
+  leftPalm.position.y = 0.04;
+  leftHandGroup.add(leftPalm);
+
+  const fingerGeo = getCachedGeometry(
+    'char_finger_phalanx_v2',
+    () => new THREE.CapsuleGeometry(0.032, 0.14, 10, 16)
+  );
+  const clawGeo = getCachedGeometry(
+    'char_finger_claw_v2',
+    () => new THREE.ConeGeometry(0.024, 0.08, 12)
+  );
   for (let f = 0; f < 4; f++) {
     const fg = new THREE.Group();
-    fg.position.set(-0.11 + f * 0.072, 0.08, 0.16);
-    fg.rotation.x = -0.45;
+    fg.position.set((f - 1.5) * 0.072, 0.035, 0.18);
+    fg.rotation.x = Math.PI / 2 + 0.15;
     fg.add(new THREE.Mesh(fingerGeo, skinMat));
     const claw = new THREE.Mesh(clawGeo, darkMetalMat);
     claw.position.y = 0.11;
     fg.add(claw);
-    handGroup.add(fg);
+    leftHandGroup.add(fg);
   }
+
+  // --- RIGHT ARM & HAND HOLDING CARDS WITH ZERO CLIPPING ---
+  const rightArmGroup = new THREE.Group();
+  rightArmGroup.position.set(0.62, 0.40, 0.04);
+  chestGroup.add(rightArmGroup);
+
+  const rightArmGeo = getCachedGeometry(
+    `char_right_arm_connected_${detail}_v3`,
+    () => {
+      const curve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(0.24, -0.38, 0.24),
+        new THREE.Vector3(0.10, -0.66, 0.66),
+        new THREE.Vector3(-0.26, -0.58, 1.02),
+      ]);
+      return new THREE.TubeGeometry(curve, armTubSeg, 0.165, armRadSeg, false);
+    }
+  );
+  const rightArmMesh = new THREE.Mesh(rightArmGeo, vestMat);
+  rightArmGroup.add(rightArmMesh);
+
+  const rightCuff = new THREE.Mesh(
+    getCachedGeometry(
+      'char_wrist_cuff_v2',
+      () => new THREE.TorusGeometry(0.165, 0.032, 16, 32)
+    ),
+    goldTrimMat
+  );
+  rightCuff.position.set(-0.21, -0.59, 0.96);
+  rightCuff.rotation.y = -0.45;
+  rightArmGroup.add(rightCuff);
+
+  const handGroup = new THREE.Group();
+  handGroup.position.set(-0.30, -0.56, 1.12);
+  rightArmGroup.add(handGroup);
+
+  // Palm positioned safely BEHIND AND BELOW cards
+  const rightPalm = new THREE.Mesh(palmGeo, skinMat);
+  rightPalm.scale.set(1.05, 0.62, 1.15);
+  rightPalm.position.set(0, -0.04, -0.06);
+  handGroup.add(rightPalm);
+
+  // Thumb supporting from behind
+  const thumbGroup = new THREE.Group();
+  thumbGroup.position.set(-0.12, 0.02, -0.04);
+  thumbGroup.rotation.set(0.35, 0.45, -0.2);
+  thumbGroup.add(new THREE.Mesh(fingerGeo, skinMat));
+  handGroup.add(thumbGroup);
+
+  // Fingers gently pinching the lower front edge ONLY - NO CLIPPING THROUGH FACE!
+  const fingersGroup = new THREE.Group();
+  fingersGroup.position.set(0, 0.08, 0.14);
+  for (let f = 0; f < 4; f++) {
+    const fg = new THREE.Group();
+    fg.position.set(-0.11 + f * 0.072, 0, 0);
+    fg.rotation.x = -0.55;
+    fg.add(new THREE.Mesh(fingerGeo, skinMat));
+    const claw = new THREE.Mesh(clawGeo, darkMetalMat);
+    claw.position.y = 0.11;
+    fg.add(claw);
+    fingersGroup.add(fg);
+  }
+  handGroup.add(fingersGroup);
+
+  // Fanned 3D Cards placed cleanly in front of palm, above lower fingers
+  const cardsHolderGroup = new THREE.Group();
+  cardsHolderGroup.position.set(0, 0.30, 0.08);
+  handGroup.add(cardsHolderGroup);
 
   const cardBackTex = getOrnateCardBackTexture(options.accentHex);
   const cardBackMat = isMatchLod
@@ -2636,6 +3036,7 @@ export function buildSeatedCharacter3D(options: {
         metalness: 0.18,
         clearcoat: 0.3,
       });
+
   const cardEdgeMat = isMatchLod
     ? new THREE.MeshStandardMaterial({
         color: trimColor,
@@ -2666,15 +3067,815 @@ export function buildSeatedCharacter3D(options: {
     ]);
     cardMesh.position.set(
       spread * 0.68,
-      0.18 + Math.abs(c - 2) * -0.028,
+      Math.abs(c - 2) * -0.028,
       c * 0.014
     );
     cardMesh.rotation.z = -spread * 0.78;
     cardMesh.rotation.x = -0.22;
-    handGroup.add(cardMesh);
+    cardsHolderGroup.add(cardMesh);
     cardsInHand.push(cardMesh);
   }
 
+  // --- PROCEDURAL ANIMATION & 4-STATE MACHINE ---
+  let currentState: CharacterReactionState = 'idle';
+  let stateTimer = 0;
+
+  const updateEyeBlink = (eye: EyeController, elapsed: number) => {
+    const bs = eye.blinkState;
+    if (!bs.isBlinking) {
+      if (elapsed >= bs.nextBlinkTime) {
+        bs.isBlinking = true;
+        bs.blinkProgress = 0;
+        bs.isDoubleBlink = Math.random() < 0.28;
+      }
+    } else {
+      bs.blinkProgress += 0.085;
+      const blinkCycle = Math.sin(Math.min(1, bs.blinkProgress) * Math.PI);
+      const closeScaleY = 1.0 - blinkCycle * 0.92;
+      eye.upperLidMesh.scale.y = closeScaleY;
+      eye.lowerLidMesh.scale.y = closeScaleY;
+
+      if (bs.blinkProgress >= 1) {
+        if (bs.isDoubleBlink) {
+          bs.isDoubleBlink = false;
+          bs.blinkProgress = 0;
+        } else {
+          bs.isBlinking = false;
+          bs.nextBlinkTime = elapsed + 3.0 + Math.random() * 2.5;
+          eye.upperLidMesh.scale.y = 1;
+          eye.lowerLidMesh.scale.y = 1;
+        }
+      }
+    }
+  };
+
+  const updateAnimation = (
+    elapsed: number,
+    dtFactor: number,
+    desiredState: CharacterReactionState,
+    targetLookWorldPos?: THREE.Vector3 | null
+  ) => {
+    if (desiredState !== currentState) {
+      currentState = desiredState;
+      stateTimer = 0;
+    }
+    stateTimer += 0.016 * dtFactor;
+
+    // 1. Natural Breathing on chest & spine
+    const breath = Math.sin(elapsed * 1.85);
+    chestGroup.scale.set(
+      1.0 + breath * 0.012,
+      1.0 + breath * 0.018,
+      1.0 + breath * 0.015
+    );
+    neckGroup.rotation.x = breath * 0.018;
+
+    // 2. Stochastic eye blinks
+    updateEyeBlink(leftEye, elapsed);
+    updateEyeBlink(rightEye, elapsed);
+
+    // 3. Eye tracking convergence toward target
+    if (targetLookWorldPos) {
+      const charWorldPos = root.position;
+      const dx = targetLookWorldPos.x - charWorldPos.x;
+      const dz = targetLookWorldPos.z - charWorldPos.z;
+      const targetAngleY = Math.atan2(dx, dz);
+      headGroup.rotation.y = THREE.MathUtils.lerp(
+        headGroup.rotation.y,
+        targetAngleY * 0.35,
+        0.08 * dtFactor
+      );
+    } else {
+      headGroup.rotation.y = THREE.MathUtils.lerp(
+        headGroup.rotation.y,
+        Math.sin(elapsed * 0.8) * 0.05,
+        0.05 * dtFactor
+      );
+    }
+
+    // 4. 4-State Machine: idle | throwing | victory | defeat
+    switch (currentState) {
+      case 'throwing': {
+        const throwT = Math.min(1, stateTimer * 3.5);
+        const lurch = Math.sin(throwT * Math.PI);
+        spineBaseGroup.rotation.x = -lurch * 0.16;
+        chestGroup.rotation.x = -lurch * 0.12;
+        rightArmGroup.position.z = 0.04 + lurch * 0.18;
+        rightArmGroup.rotation.x = lurch * 0.14;
+        break;
+      }
+      case 'victory': {
+        spineBaseGroup.rotation.x = THREE.MathUtils.lerp(
+          spineBaseGroup.rotation.x,
+          -0.06,
+          0.08 * dtFactor
+        );
+        chestGroup.rotation.x = THREE.MathUtils.lerp(
+          chestGroup.rotation.x,
+          -0.08,
+          0.08 * dtFactor
+        );
+        headGroup.rotation.x = THREE.MathUtils.lerp(
+          headGroup.rotation.x,
+          -0.14,
+          0.08 * dtFactor
+        );
+        headGroup.rotation.z = Math.sin(elapsed * 4.2) * 0.05;
+        rightArmGroup.rotation.z = Math.sin(elapsed * 3.6) * 0.08;
+        break;
+      }
+      case 'defeat': {
+        spineBaseGroup.rotation.x = THREE.MathUtils.lerp(
+          spineBaseGroup.rotation.x,
+          0.12,
+          0.08 * dtFactor
+        );
+        chestGroup.rotation.x = THREE.MathUtils.lerp(
+          chestGroup.rotation.x,
+          0.16,
+          0.08 * dtFactor
+        );
+        headGroup.rotation.x = THREE.MathUtils.lerp(
+          headGroup.rotation.x,
+          0.24,
+          0.08 * dtFactor
+        );
+        headGroup.rotation.z = Math.sin(elapsed * 1.5) * 0.02;
+        break;
+      }
+      case 'idle':
+      default: {
+        spineBaseGroup.rotation.x = THREE.MathUtils.lerp(
+          spineBaseGroup.rotation.x,
+          0,
+          0.08 * dtFactor
+        );
+        chestGroup.rotation.x = THREE.MathUtils.lerp(
+          chestGroup.rotation.x,
+          0,
+          0.08 * dtFactor
+        );
+        headGroup.rotation.x = THREE.MathUtils.lerp(
+          headGroup.rotation.x,
+          0,
+          0.08 * dtFactor
+        );
+        headGroup.rotation.z = THREE.MathUtils.lerp(
+          headGroup.rotation.z,
+          0,
+          0.08 * dtFactor
+        );
+        rightArmGroup.position.z = THREE.MathUtils.lerp(
+          rightArmGroup.position.z,
+          0.04,
+          0.08 * dtFactor
+        );
+        rightArmGroup.rotation.x = THREE.MathUtils.lerp(
+          rightArmGroup.rotation.x,
+          0,
+          0.08 * dtFactor
+        );
+        rightArmGroup.rotation.z = THREE.MathUtils.lerp(
+          rightArmGroup.rotation.z,
+          0,
+          0.08 * dtFactor
+        );
+        break;
+      }
+    }
+  };
+
   optimizeHierarchyForCulling(root);
-  return { root, headGroup, handGroup, cardsInHand };
+
+  return {
+    root,
+    chairGroup,
+    spineBaseGroup,
+    chestGroup,
+    neckGroup,
+    headGroup,
+    leftArmGroup,
+    rightArmGroup,
+    leftHandGroup,
+    handGroup,
+    cardsInHand,
+    leftEye,
+    rightEye,
+    currentState,
+    stateTimer,
+    updateAnimation,
+  };
+}
+
+
+// ============================================================================
+// SCULPTED ARTICULATED FIRST-PERSON HANDS & GAUNTLETS
+// ============================================================================
+export function buildSculptedFirstPersonHands(
+  customization?: Partial<CharacterCustomization> | null
+): {
+  leftHand: THREE.Group;
+  rightHand: THREE.Group;
+  leftRig: ArticulatedHandRig;
+  rightRig: ArticulatedHandRig;
+} {
+  const custom = resolveCharacterCustomization(customization, 0);
+  const archInfo =
+    CHARACTER_ARCHETYPES.find((a) => a.id === custom.archetypeId) ??
+    CHARACTER_ARCHETYPES[0];
+  const outfitInfo =
+    CHARACTER_OUTFITS.find((o) => o.id === custom.outfitId) ??
+    CHARACTER_OUTFITS[0];
+  const isCyber = Boolean(archInfo.isCyber);
+  const hexBump = getMechaHexScaleTexture();
+  const furBump = getAnimalFurBumpTexture();
+
+  const skinPawMat = isCyber
+    ? new THREE.MeshPhysicalMaterial({
+        color: archInfo.skinColorHex,
+        roughness: 0.26,
+        metalness: 0.72,
+        bumpMap: hexBump,
+        bumpScale: 0.015,
+        clearcoat: 0.7,
+      })
+    : new THREE.MeshPhysicalMaterial({
+        color: archInfo.skinColorHex,
+        roughness: 0.65,
+        metalness: 0.06,
+        bumpMap: furBump,
+        bumpScale: 0.02,
+        sheen: 0.8,
+        sheenRoughness: 0.35,
+        clearcoat: 0.15,
+      });
+
+  const gloveLeatherMat = new THREE.MeshPhysicalMaterial({
+    color: outfitInfo.vestHex,
+    roughness: 0.42,
+    metalness: 0.28,
+    clearcoat: 0.35,
+  });
+
+  const trimColor = new THREE.Color(outfitInfo.trimHex || archInfo.accentHex);
+  const brassTrimMat = new THREE.MeshPhysicalMaterial({
+    color: trimColor,
+    metalness: 0.9,
+    roughness: 0.2,
+    emissive: trimColor,
+    emissiveIntensity: 0.18,
+    clearcoat: 0.7,
+  });
+
+  const clawDarkMat = new THREE.MeshPhysicalMaterial({
+    color: 0x141418,
+    roughness: 0.2,
+    metalness: 0.65,
+    clearcoat: 0.8,
+  });
+
+  const palmGeo = getCachedGeometry('fp_sculpted_palm_v3', () => {
+    const g = new THREE.SphereGeometry(0.22, 28, 22);
+    g.scale(1.12, 0.46, 1.32);
+    return g;
+  });
+  const proxPhalanxGeo = getCachedGeometry(
+    'fp_prox_phalanx_v3',
+    () => new THREE.CapsuleGeometry(0.034, 0.11, 8, 14)
+  );
+  const medPhalanxGeo = getCachedGeometry(
+    'fp_med_phalanx_v3',
+    () => new THREE.CapsuleGeometry(0.029, 0.09, 8, 12)
+  );
+  const distPhalanxGeo = getCachedGeometry(
+    'fp_dist_phalanx_v3',
+    () => new THREE.CapsuleGeometry(0.025, 0.07, 8, 12)
+  );
+  const clawTipGeo = getCachedGeometry(
+    'fp_claw_tip_v3',
+    () => new THREE.ConeGeometry(0.024, 0.08, 10)
+  );
+  const knuckleStudGeo = getCachedGeometry(
+    'fp_knuckle_stud_v3',
+    () => new THREE.OctahedronGeometry(0.028, 1)
+  );
+
+  const buildHand = (isRight: boolean): ArticulatedHandRig => {
+    const hand = new THREE.Group();
+    const wristGroup = new THREE.Group();
+    hand.add(wristGroup);
+    const mirror = isRight ? 1 : -1;
+
+    // Sculpted palm with dorsal fingerless glove plate
+    const palmMesh = new THREE.Mesh(palmGeo, skinPawMat);
+    wristGroup.add(palmMesh);
+
+    const gloveMesh = new THREE.Mesh(
+      getCachedGeometry(
+        'fp_dorsal_glove_v3',
+        () => new RoundedBoxGeometry(0.42, 0.08, 0.36, 4, 0.028)
+      ),
+      gloveLeatherMat
+    );
+    gloveMesh.position.set(0, 0.065, 0.04);
+    wristGroup.add(gloveMesh);
+
+    // Forearm sleeve & ornate metallic cuff
+    const forearmMesh = new THREE.Mesh(
+      getCachedGeometry(
+        'fp_forearm_sleeve_v3',
+        () => new THREE.CylinderGeometry(0.2, 0.24, 0.58, 24)
+      ),
+      gloveLeatherMat
+    );
+    forearmMesh.rotation.x = Math.PI / 2 - 0.12;
+    forearmMesh.position.set(0, -0.04, 0.46);
+    wristGroup.add(forearmMesh);
+
+    const cuffMesh = new THREE.Mesh(
+      getCachedGeometry(
+        'fp_wrist_cuff_ring_v3',
+        () => new THREE.TorusGeometry(0.195, 0.028, 14, 28)
+      ),
+      brassTrimMat
+    );
+    cuffMesh.position.set(0, -0.01, 0.24);
+    wristGroup.add(cuffMesh);
+
+    // Left wrist Saloon Chrono-Watch
+    if (!isRight) {
+      const watchDial = new THREE.Mesh(
+        getCachedGeometry(
+          'fp_watch_dial_v3',
+          () => new THREE.CylinderGeometry(0.095, 0.095, 0.04, 24)
+        ),
+        brassTrimMat
+      );
+      watchDial.position.set(0.02, 0.11, 0.24);
+      wristGroup.add(watchDial);
+    }
+
+    // 4 Articulated Multi-Jointed Fingers with 3 Phalanges Each
+    const fingers: FingerBones[] = [];
+    for (let f = 0; f < 4; f++) {
+      const fx = (f - 1.5) * 0.092;
+      const archY = -Math.abs(f - 1.5) * 0.014;
+
+      const knuckle = new THREE.Mesh(knuckleStudGeo, brassTrimMat);
+      knuckle.position.set(fx, 0.095 + archY, -0.11);
+      knuckle.scale.set(1, 0.55, 1);
+      wristGroup.add(knuckle);
+
+      const fingerRoot = new THREE.Group();
+      fingerRoot.position.set(fx, 0.02 + archY, -0.22);
+      fingerRoot.rotation.x = isRight ? -0.32 : 0.26;
+      fingerRoot.rotation.z = (f - 1.5) * -0.04;
+
+      const proximalPhalanx = new THREE.Mesh(proxPhalanxGeo, skinPawMat);
+      proximalPhalanx.rotation.x = Math.PI / 2;
+      proximalPhalanx.position.z = -0.06;
+      fingerRoot.add(proximalPhalanx);
+
+      const medialJoint = new THREE.Group();
+      medialJoint.position.set(0, 0, -0.12);
+      medialJoint.rotation.x = isRight ? 0.25 : 0.35;
+
+      const medialPhalanx = new THREE.Mesh(medPhalanxGeo, skinPawMat);
+      medialPhalanx.rotation.x = Math.PI / 2;
+      medialPhalanx.position.z = -0.05;
+      medialJoint.add(medialPhalanx);
+
+      const distalJoint = new THREE.Group();
+      distalJoint.position.set(0, 0, -0.10);
+      distalJoint.rotation.x = isRight ? 0.22 : 0.32;
+
+      const distalPhalanx = new THREE.Mesh(distPhalanxGeo, skinPawMat);
+      distalPhalanx.rotation.x = Math.PI / 2;
+      distalPhalanx.position.z = -0.04;
+      distalJoint.add(distalPhalanx);
+
+      const clawTip = new THREE.Mesh(clawTipGeo, clawDarkMat);
+      clawTip.rotation.x = -Math.PI / 2.1;
+      clawTip.position.z = -0.09;
+      distalJoint.add(clawTip);
+
+      medialJoint.add(distalJoint);
+      fingerRoot.add(medialJoint);
+      wristGroup.add(fingerRoot);
+
+      fingers.push({
+        root: fingerRoot,
+        proximalPhalanx,
+        medialJoint,
+        medialPhalanx,
+        distalJoint,
+        distalPhalanx,
+        clawTip,
+      });
+    }
+
+    // Opposable Articulated Thumb
+    const carpometacarpalJoint = new THREE.Group();
+    carpometacarpalJoint.position.set(-mirror * 0.22, 0.04, -0.06);
+    carpometacarpalJoint.rotation.set(0.28, mirror * 0.42, mirror * 0.45);
+
+    const thumbProximal = new THREE.Mesh(proxPhalanxGeo, skinPawMat);
+    thumbProximal.rotation.x = Math.PI / 2;
+    thumbProximal.position.z = -0.07;
+    carpometacarpalJoint.add(thumbProximal);
+
+    const interphalangealJoint = new THREE.Group();
+    interphalangealJoint.position.set(0, 0, -0.13);
+    interphalangealJoint.rotation.x = 0.38;
+
+    const thumbDistal = new THREE.Mesh(distPhalanxGeo, skinPawMat);
+    thumbDistal.rotation.x = Math.PI / 2;
+    thumbDistal.position.z = -0.05;
+    interphalangealJoint.add(thumbDistal);
+
+    const thumbClaw = new THREE.Mesh(clawTipGeo, clawDarkMat);
+    thumbClaw.rotation.x = -Math.PI / 2.1;
+    thumbClaw.position.z = -0.11;
+    interphalangealJoint.add(thumbClaw);
+
+    carpometacarpalJoint.add(interphalangealJoint);
+    wristGroup.add(carpometacarpalJoint);
+
+    const thumb: ThumbBones = {
+      carpometacarpalJoint,
+      proximalPhalanx: thumbProximal,
+      interphalangealJoint,
+      distalPhalanx: thumbDistal,
+      clawTip: thumbClaw,
+    };
+
+    return {
+      group: hand,
+      wristGroup,
+      palmMesh,
+      gloveMesh,
+      forearmMesh,
+      cuffMesh,
+      fingers,
+      thumb,
+    };
+  };
+
+  const leftRig = buildHand(false);
+  const rightRig = buildHand(true);
+
+  return {
+    leftHand: leftRig.group,
+    rightHand: rightRig.group,
+    leftRig,
+    rightRig,
+  };
+}
+
+// ============================================================================
+// RICH 3D SALOON & CYBER-ARENA ARCHITECTURE (Pillars, Lanterns, Bar & Chandelier)
+// ============================================================================
+export function buildSaloonEnvironmentProps(accentHex = '#F59E0B'): THREE.Group {
+  const envGroup = new THREE.Group();
+  const accentColor = new THREE.Color(accentHex);
+
+  const darkWoodMat = new THREE.MeshStandardMaterial({
+    color: 0x241008,
+    roughness: 0.65,
+    metalness: 0.12,
+  });
+
+  const brassMat = new THREE.MeshStandardMaterial({
+    color: 0xd97706,
+    metalness: 0.88,
+    roughness: 0.24,
+  });
+
+  const lanternGlowMat = new THREE.MeshStandardMaterial({
+    color: 0xfde68a,
+    emissive: accentColor,
+    emissiveIntensity: 0.85,
+    roughness: 0.15,
+  });
+
+  // 1. 6 Architectural Columns & Glowing Wall Lantern Sconces around the Arena
+  const pillarGeo = getCachedGeometry(
+    'env_saloon_pillar_v2',
+    () => new THREE.CylinderGeometry(0.32, 0.38, 8.8, 16)
+  );
+  const ringBandGeo = getCachedGeometry(
+    'env_pillar_band_v2',
+    () => new THREE.TorusGeometry(0.35, 0.045, 12, 24)
+  );
+  const lanternCageGeo = getCachedGeometry(
+    'env_lantern_cage_v2',
+    () => new THREE.OctahedronGeometry(0.22, 1)
+  );
+
+  const pillarAngles = [-2.35, -1.75, -1.18, -0.62, -2.75, -0.38];
+  for (let i = 0; i < pillarAngles.length; i++) {
+    const a = pillarAngles[i];
+    const r = 9.8;
+    const px = Math.cos(a) * r;
+    const pz = Math.sin(a) * r;
+
+    const colGroup = new THREE.Group();
+    colGroup.position.set(px, 1.8, pz);
+    colGroup.lookAt(0, 1.8, 0);
+
+    colGroup.add(new THREE.Mesh(pillarGeo, darkWoodMat));
+
+    const band = new THREE.Mesh(ringBandGeo, brassMat);
+    band.rotation.x = Math.PI / 2;
+    band.position.y = 0.6;
+    colGroup.add(band);
+
+    const lantern = new THREE.Mesh(lanternCageGeo, lanternGlowMat);
+    lantern.position.set(0, 0.65, 0.52);
+    colGroup.add(lantern);
+
+    envGroup.add(colGroup);
+  }
+
+  // 2. Back Saloon Trophy & Elixir Bar Shelf + Glowing Hexagon Emblem
+  const backShelfGroup = new THREE.Group();
+  backShelfGroup.position.set(0, 1.45, -8.8);
+
+  const counterBar = new THREE.Mesh(
+    getCachedGeometry(
+      'env_back_counter_v2',
+      () => new RoundedBoxGeometry(6.8, 1.6, 0.8, 4, 0.06)
+    ),
+    darkWoodMat
+  );
+  counterBar.position.y = -1.2;
+  backShelfGroup.add(counterBar);
+
+  // Glowing Hexagonal Arena Crest on the Back Wall
+  const hexCrest = new THREE.Mesh(
+    getCachedGeometry(
+      'env_hex_crest_v2',
+      () => new THREE.TorusGeometry(1.15, 0.065, 16, 6)
+    ),
+    lanternGlowMat
+  );
+  hexCrest.position.set(0, 1.35, 0.15);
+  backShelfGroup.add(hexCrest);
+
+  // Illuminated Elixir Bottles on the Back Bar Shelf (Instanced)
+  const bottleGeo = getCachedGeometry(
+    'env_elixir_bottle_v2',
+    () => new THREE.CylinderGeometry(0.08, 0.12, 0.46, 14)
+  );
+  const bottleInst = new THREE.InstancedMesh(bottleGeo, lanternGlowMat, 10);
+  const dummy = new THREE.Object3D();
+  const bottleColor = new THREE.Color();
+  const bottleHues = [0.08, 0.38, 0.52, 0.82, 0.12];
+  for (let b = 0; b < 10; b++) {
+    const bx = (b - 4.5) * 0.56;
+    dummy.position.set(bx, -0.15, 0.18);
+    dummy.rotation.set(0, 0, 0);
+    dummy.updateMatrix();
+    bottleInst.setMatrixAt(b, dummy.matrix);
+    bottleColor.setHSL(bottleHues[b % bottleHues.length], 0.9, 0.55);
+    bottleInst.setColorAt(b, bottleColor);
+  }
+  bottleInst.instanceMatrix.needsUpdate = true;
+  if (bottleInst.instanceColor) bottleInst.instanceColor.needsUpdate = true;
+  backShelfGroup.add(bottleInst);
+  envGroup.add(backShelfGroup);
+
+  // 3. Wrought-Iron & Brass Chandelier Wheel + Volumetric Light Cone
+  const chandelier = new THREE.Group();
+  chandelier.position.set(0, 3.85, -0.2);
+
+  const wheel = new THREE.Mesh(
+    getCachedGeometry(
+      'env_chandelier_wheel_v2',
+      () => new THREE.TorusGeometry(1.25, 0.055, 16, 48)
+    ),
+    brassMat
+  );
+  wheel.rotation.x = Math.PI / 2;
+  chandelier.add(wheel);
+
+  const bulbGeo = getCachedGeometry(
+    'env_chandelier_bulb_v2',
+    () => new THREE.SphereGeometry(0.095, 14, 14)
+  );
+  const bulbInst = new THREE.InstancedMesh(bulbGeo, lanternGlowMat, 6);
+  for (let k = 0; k < 6; k++) {
+    const ka = (k / 6) * Math.PI * 2;
+    dummy.position.set(Math.cos(ka) * 1.25, -0.08, Math.sin(ka) * 1.25);
+    dummy.updateMatrix();
+    bulbInst.setMatrixAt(k, dummy.matrix);
+  }
+  bulbInst.instanceMatrix.needsUpdate = true;
+  chandelier.add(bulbInst);
+
+  // 4 Forged Iron Suspension Chains connecting chandelier wheel to ceiling mounting bracket
+  const chainLinkGeo = getCachedGeometry(
+    'env_chandelier_chain_link_v2',
+    () => new THREE.TorusGeometry(0.045, 0.014, 12, 20)
+  );
+  const ironMat = new THREE.MeshStandardMaterial({
+    color: 0x1c1917,
+    roughness: 0.75,
+    metalness: 0.85,
+  });
+
+  const linksPerChain = 12;
+  const chainInst = new THREE.InstancedMesh(
+    chainLinkGeo,
+    ironMat,
+    linksPerChain * 4
+  );
+
+  for (let c = 0; c < 4; c++) {
+    const angle = (c / 4) * Math.PI * 2 + Math.PI / 4;
+    const startX = Math.cos(angle) * 1.15;
+    const startZ = Math.sin(angle) * 1.15;
+    for (let link = 0; link < linksPerChain; link++) {
+      const t = link / (linksPerChain - 1);
+      const lx = startX * (1 - t * 0.85);
+      const ly = t * 1.35;
+      const lz = startZ * (1 - t * 0.85);
+      dummy.position.set(lx, ly, lz);
+      dummy.rotation.set(0.35, angle, link % 2 === 0 ? 0 : Math.PI / 2);
+      dummy.scale.set(1, 1.4, 1);
+      dummy.updateMatrix();
+      chainInst.setMatrixAt(c * linksPerChain + link, dummy.matrix);
+    }
+  }
+  chainInst.instanceMatrix.needsUpdate = true;
+  chandelier.add(chainInst);
+
+  // Ceiling mounting bracket
+  const ceilingMount = new THREE.Mesh(
+    getCachedGeometry(
+      'env_chandelier_ceiling_mount_v2',
+      () => new THREE.CylinderGeometry(0.24, 0.28, 0.12, 24)
+    ),
+    brassMat
+  );
+  ceilingMount.position.set(0, 1.4, 0);
+  chandelier.add(ceilingMount);
+
+  // Subtle volumetric light cone casting down onto the saloon table
+  const lightConeMat = new THREE.MeshBasicMaterial({
+    color: accentColor,
+    transparent: true,
+    opacity: 0.045,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const lightCone = new THREE.Mesh(
+    getCachedGeometry(
+      'env_volumetric_cone_v2',
+      () => new THREE.ConeGeometry(3.6, 3.9, 32, 1, true)
+    ),
+    lightConeMat
+  );
+  lightCone.position.set(0, -1.9, 0);
+  chandelier.add(lightCone);
+
+  envGroup.add(chandelier);
+  optimizeHierarchyForCulling(envGroup);
+  return envGroup;
+}
+
+/**
+ * Builds an authentic Saloon / VIP Tavern Brass Candelabra Set with sculpted ivory candles,
+ * blackened wicks, teardrop flame meshes, and procedural triple-harmonic flame flickering.
+ */
+export function buildTableCandleSet(
+  positions: [number, number, number][] = [
+    [-1.75, 0.02, -0.85],
+    [1.75, 0.02, -0.85],
+  ],
+  accentHex = '#F59E0B'
+): TableCandleController {
+  const group = new THREE.Group();
+  const flameMeshes: THREE.Mesh[] = [];
+  const flameLights: THREE.PointLight[] = [];
+
+  const brassMat = new THREE.MeshPhysicalMaterial({
+    color: 0xd97706,
+    metalness: 0.92,
+    roughness: 0.22,
+    clearcoat: 0.6,
+  });
+
+  const candleWaxMat = new THREE.MeshStandardMaterial({
+    color: 0xfdfaf2,
+    roughness: 0.72,
+    metalness: 0.04,
+    emissive: 0xffe8ba,
+    emissiveIntensity: 0.08,
+  });
+
+  const wickMat = new THREE.MeshStandardMaterial({
+    color: 0x18181b,
+    roughness: 0.9,
+  });
+
+  const flameMat = new THREE.MeshBasicMaterial({
+    color: 0xffa834,
+    transparent: true,
+    opacity: 0.92,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+
+  const baseGeo = getCachedGeometry(
+    'candelabra_base_v2',
+    () => new THREE.CylinderGeometry(0.12, 0.16, 0.06, 20)
+  );
+  const stemGeo = getCachedGeometry(
+    'candelabra_stem_v2',
+    () => new THREE.CylinderGeometry(0.042, 0.055, 0.28, 16)
+  );
+  const cupGeo = getCachedGeometry(
+    'candelabra_cup_v2',
+    () => new THREE.CylinderGeometry(0.085, 0.048, 0.06, 18)
+  );
+  const waxGeo = getCachedGeometry(
+    'candelabra_wax_v2',
+    () => new THREE.CylinderGeometry(0.065, 0.068, 0.26, 18)
+  );
+  const wickGeo = getCachedGeometry(
+    'candelabra_wick_v2',
+    () => new THREE.CylinderGeometry(0.008, 0.008, 0.05, 8)
+  );
+  const flameGeo = getCachedGeometry(
+    'candelabra_flame_v2',
+    () => new THREE.ConeGeometry(0.042, 0.14, 16)
+  );
+
+  positions.forEach((pos) => {
+    const candelabra = new THREE.Group();
+    candelabra.position.set(...pos);
+
+    const base = new THREE.Mesh(baseGeo, brassMat);
+    base.position.y = 0.03;
+    candelabra.add(base);
+
+    const stem = new THREE.Mesh(stemGeo, brassMat);
+    stem.position.y = 0.18;
+    candelabra.add(stem);
+
+    const cup = new THREE.Mesh(cupGeo, brassMat);
+    cup.position.y = 0.33;
+    candelabra.add(cup);
+
+    const wax = new THREE.Mesh(waxGeo, candleWaxMat);
+    wax.position.y = 0.48;
+    candelabra.add(wax);
+
+    const wick = new THREE.Mesh(wickGeo, wickMat);
+    wick.position.y = 0.63;
+    candelabra.add(wick);
+
+    const flame = new THREE.Mesh(flameGeo, flameMat);
+    flame.position.y = 0.70;
+    candelabra.add(flame);
+    flameMeshes.push(flame);
+
+    const candleLight = new THREE.PointLight(0xff9933, 0.95, 2.6, 2.0);
+    candleLight.position.set(pos[0], pos[1] + 0.72, pos[2]);
+    group.add(candleLight);
+    flameLights.push(candleLight);
+
+    group.add(candelabra);
+  });
+
+  const updateFlames = (elapsed: number, dtFactor: number) => {
+    flameMeshes.forEach((flame, i) => {
+      const phi = i * 2.4;
+      const flicker =
+        1.0 +
+        Math.sin(elapsed * 18.2 + phi) * 0.14 +
+        Math.cos(elapsed * 31.4 + phi) * 0.08 +
+        Math.sin(elapsed * 52.8) * 0.04;
+
+      flame.scale.set(
+        1.0 + Math.sin(elapsed * 14.5 + phi) * 0.08,
+        flicker,
+        1.0 + Math.cos(elapsed * 16.2 + phi) * 0.08
+      );
+      flame.rotation.z = Math.sin(elapsed * 12.0 + phi) * 0.06;
+
+      if (flameLights[i]) {
+        flameLights[i].intensity = 0.85 * flicker;
+      }
+    });
+  };
+
+  return {
+    group,
+    flameMeshes,
+    flameLights,
+    updateFlames,
+  };
 }

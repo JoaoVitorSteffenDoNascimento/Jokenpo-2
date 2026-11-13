@@ -100,6 +100,38 @@ export type CharacterGunSkinId =
   | 'carmesim_furia'
   | 'cyber_plasma';
 
+export type ArenaTableThemeId =
+  | 'saloon_mogno'
+  | 'cyber_neon'
+  | 'obsidiana_imperial'
+  | 'esmeralda_etm'
+  | 'saloon_rustico'
+  | 'cyber_neon_vip'
+  | 'ouro_cassino'
+  | 'templo_cosmico';
+
+export type CardAuraId =
+  | 'chama_real'
+  | 'plasma_ciano'
+  | 'relampago_ouro'
+  | 'sombra_arcana'
+  | 'chamas_carmesim'
+  | 'relampago_eletrico'
+  | 'void_cosmico'
+  | 'glitch_cyberpunk';
+
+export type VictoryEmoteId =
+  | 'saudacao_real'
+  | 'giro_revolver'
+  | 'rugido_chefe'
+  | 'holograma_gg'
+  | 'palmas_taticas'
+  | 'fogo_intenso'
+  | 'caveira_fatal'
+  | 'blefe_absoluto'
+  | 'oculos_mito'
+  | 'espanto_total';
+
 export interface CharacterCustomization {
   archetypeId: CharacterArchetypeId;
   hatId: CharacterHatId;
@@ -107,6 +139,9 @@ export interface CharacterCustomization {
   outfitId: CharacterOutfitId;
   propId: CharacterPropId;
   gunSkinId: CharacterGunSkinId;
+  tableThemeId?: ArenaTableThemeId;
+  cardAuraId?: CardAuraId;
+  victoryEmoteId?: VictoryEmoteId;
 }
 
 export interface PlayerProfile {

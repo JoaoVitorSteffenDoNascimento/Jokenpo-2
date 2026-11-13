@@ -46,6 +46,57 @@ import {
   Turma,
 } from '../types/game';
 
+// ==========================================
+// HYBRID LOCAL ARENA (OFFLINE STORAGE & AUTH)
+// ==========================================
+const localProfilesMemory = new Map<string, PlayerProfile>();
+const localMatchesMemory = new Map<string, MatchHistoryEntry[]>();
+const localRoomsMemory = new Map<string, MatchRoom>();
+
+export function isLocalArenaUid(uid: string): boolean {
+  return typeof uid === 'string' && uid.startsWith('local_arena_');
+}
+
+export function signInWithLocalArena(
+  displayName = 'Duelista_Local'
+): { uid: string; displayName: string; email: string } {
+  const cleanName = displayName.trim().replace(/\s+/g, '_') || 'Duelista_Local';
+  const uid = `local_arena_${cleanName.toLowerCase()}`;
+  const localUser = {
+    uid,
+    displayName: cleanName,
+    email: `${cleanName.toLowerCase()}@local.arena`,
+  };
+  if (typeof globalThis.localStorage !== 'undefined') {
+    globalThis.localStorage.setItem('local_arena_current_user', JSON.stringify(localUser));
+  }
+  return localUser;
+}
+
+function getLocalProfile(uid: string): PlayerProfile | null {
+  if (localProfilesMemory.has(uid)) return localProfilesMemory.get(uid)!;
+  if (typeof globalThis.localStorage !== 'undefined') {
+    const raw = globalThis.localStorage.getItem(`local_arena_profile_${uid}`);
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as PlayerProfile;
+        localProfilesMemory.set(uid, parsed);
+        return parsed;
+      } catch {
+        // Ignore malformed cache
+      }
+    }
+  }
+  return null;
+}
+
+function saveLocalProfile(profile: PlayerProfile): void {
+  localProfilesMemory.set(profile.uid, profile);
+  if (typeof globalThis.localStorage !== 'undefined') {
+    globalThis.localStorage.setItem(`local_arena_profile_${profile.uid}`, JSON.stringify(profile));
+  }
+}
+
 export async function signInWithGoogle(): Promise<User> {
   const result = await signInWithPopup(auth, googleProvider);
   return result.user;
@@ -74,7 +125,7 @@ export async function checkNicknameAvailable(nickname: string): Promise<boolean>
 }
 
 export async function createPlayerAccount(
-  user: User,
+  user: Pick<User, 'uid'> & { displayName?: string | null; email?: string | null },
   nickname: string,
   turma: Turma
 ): Promise<PlayerProfile> {
@@ -82,6 +133,33 @@ export async function createPlayerAccount(
   const lower = normalizeNickname(trimmed);
   if (lower.length < 3 || lower.length > 20 || !/^[a-zA-Z0-9_.-]+$/.test(trimmed)) {
     throw new Error('Nickname deve ter entre 3 e 20 caracteres (letras, números, _, . ou -).');
+  }
+
+  if (isLocalArenaUid(user.uid)) {
+    const existing = getLocalProfile(user.uid);
+    if (existing) return existing;
+    const newProfile: PlayerProfile = {
+      uid: user.uid,
+      nickname: trimmed,
+      nicknameLower: lower,
+      turma,
+      trophies: 0,
+      coins: 150,
+      wins: 0,
+      losses: 0,
+      draws: 0,
+      lossStreak: 0,
+      lastDailyClaimAt: '',
+      unlockedSkins: DEFAULT_UNLOCKED_SKINS,
+      equippedSkins: DEFAULT_EQUIPPED_SKINS,
+      claimedMilestones: [],
+      proSeasonMonth: getCurrentSeasonMonthKey(),
+      proSeasonTrophies: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    saveLocalProfile(newProfile);
+    return newProfile;
   }
 
   const nickRef = doc(db, 'nicknames', lower);
@@ -159,6 +237,10 @@ export function subscribePlayerProfile(
   uid: string,
   onData: (profile: PlayerProfile | null) => void
 ): () => void {
+  if (isLocalArenaUid(uid)) {
+    onData(getLocalProfile(uid));
+    return () => {};
+  }
   const path = `players/${uid}`;
   return onSnapshot(
     doc(db, 'players', uid),
@@ -246,6 +328,27 @@ export interface DailyLoginRewardResult {
 export async function processDailyLoginReward(
   uid: string
 ): Promise<DailyLoginRewardResult> {
+  if (isLocalArenaUid(uid)) {
+    const p = getLocalProfile(uid);
+    if (!p) return { awarded: false, coinsAwarded: 0, newCoins: 0, claimedAt: '' };
+    const nowIso = new Date().toISOString();
+    const eligibility = canClaimDailyReward(p.lastDailyClaimAt);
+    if (!eligibility.eligible) {
+      return { awarded: false, coinsAwarded: 0, newCoins: p.coins, claimedAt: p.lastDailyClaimAt };
+    }
+    const updated: PlayerProfile = {
+      ...p,
+      coins: p.coins + DAILY_REWARD_COINS,
+      lastDailyClaimAt: nowIso,
+    };
+    saveLocalProfile(updated);
+    return {
+      awarded: true,
+      coinsAwarded: DAILY_REWARD_COINS,
+      newCoins: updated.coins,
+      claimedAt: nowIso,
+    };
+  }
   const path = `players/${uid}`;
   const playerRef = doc(db, 'players', uid);
   const nowIso = new Date().toISOString();
@@ -305,6 +408,20 @@ export async function buySkin(player: PlayerProfile, skin: SkinDefinition): Prom
   if (player.coins < skin.cost) {
     throw new Error('Moedinhas insuficientes para comprar esta skin.');
   }
+  if (isLocalArenaUid(player.uid)) {
+    const p = getLocalProfile(player.uid) ?? player;
+    const updated: PlayerProfile = {
+      ...p,
+      coins: p.coins - skin.cost,
+      unlockedSkins: [...p.unlockedSkins, skin.id],
+      equippedSkins: {
+        ...p.equippedSkins,
+        [skin.moveId]: skin.id,
+      },
+    };
+    saveLocalProfile(updated);
+    return;
+  }
   const path = `players/${player.uid}`;
   try {
     await updateDoc(doc(db, 'players', player.uid), {
@@ -328,6 +445,18 @@ export async function equipSkin(
 ): Promise<void> {
   if (!player.unlockedSkins.includes(skinId)) {
     throw new Error('Desbloqueie a skin antes de equipar.');
+  }
+  if (isLocalArenaUid(player.uid)) {
+    const p = getLocalProfile(player.uid) ?? player;
+    const updated: PlayerProfile = {
+      ...p,
+      equippedSkins: {
+        ...p.equippedSkins,
+        [moveId]: skinId,
+      },
+    };
+    saveLocalProfile(updated);
+    return;
   }
   const path = `players/${player.uid}`;
   try {
@@ -380,6 +509,39 @@ export async function recordPlayerMatchResult(
     trophyDelta: number;
   }
 ): Promise<void> {
+  if (isLocalArenaUid(playerUid)) {
+    const p = getLocalProfile(playerUid);
+    if (p) {
+      const updated: PlayerProfile = {
+        ...p,
+        trophies: params.newTrophies,
+        coins: p.coins + params.coinsEarned,
+        wins: p.wins + (params.outcome === 'win' ? 1 : 0),
+        losses: p.losses + (params.outcome === 'loss' ? 1 : 0),
+        draws: p.draws + (params.outcome === 'draw' ? 1 : 0),
+        lossStreak: params.newLossStreak,
+      };
+      saveLocalProfile(updated);
+    }
+    const history = localMatchesMemory.get(playerUid) ?? [];
+    const nowIso = new Date().toISOString();
+    history.unshift({
+      id: `match_${Date.now()}`,
+      uid: playerUid,
+      outcome: params.outcome,
+      mode: params.mode,
+      format: params.format,
+      isFriendly: params.isFriendly,
+      opponentName: params.opponentName,
+      opponentTurma: params.opponentTurma,
+      scoreText: params.scoreText,
+      trophyDelta: params.trophyDelta,
+      playedAt: nowIso,
+      createdAt: nowIso,
+    });
+    localMatchesMemory.set(playerUid, history.slice(0, 20));
+    return;
+  }
   const path = `players/${playerUid}`;
   const playerRef = doc(db, 'players', playerUid);
   const historyRef = doc(collection(db, 'players', playerUid, 'history'));
@@ -429,6 +591,10 @@ export function subscribeRecentMatchHistory(
   uid: string,
   onData: (entries: MatchHistoryEntry[]) => void
 ): () => void {
+  if (isLocalArenaUid(uid)) {
+    onData(localMatchesMemory.get(uid) ?? []);
+    return () => {};
+  }
   const path = `players/${uid}/history`;
   const q = query(
     collection(db, 'players', uid, 'history'),
@@ -451,6 +617,27 @@ export async function claimTrophyMilestone(
   player: PlayerProfile,
   milestone: TrophyMilestone
 ): Promise<{ coinsAwarded: number; skinUnlocked: string | null }> {
+  if (isLocalArenaUid(player.uid)) {
+    if (player.trophies < milestone.trophies) {
+      throw new Error(
+        `Você precisa de ${milestone.trophies} troféus para resgatar este marco.`
+      );
+    }
+    const p = getLocalProfile(player.uid) ?? player;
+    const claimed = p.claimedMilestones ?? [];
+    if (claimed.includes(milestone.id)) throw new Error('Marco já resgatado.');
+    const coinsAwarded = milestone.coins;
+    const skinUnlocked = milestone.skinId
+      ? getSkinById(milestone.skinId)?.name ?? milestone.skinId
+      : null;
+    const updated: PlayerProfile = {
+      ...p,
+      coins: p.coins + coinsAwarded,
+      claimedMilestones: [...claimed, milestone.id],
+    };
+    saveLocalProfile(updated);
+    return { coinsAwarded, skinUnlocked };
+  }
   const path = `players/${player.uid}`;
   const playerRef = doc(db, 'players', player.uid);
 
@@ -571,6 +758,47 @@ export async function createMatchRoom(params: {
   isFriendly: boolean;
   isPublicQueue: boolean;
 }): Promise<MatchRoom> {
+  if (isLocalArenaUid(params.player.uid)) {
+    const roomId = `room_local_${Date.now()}`;
+    const teamSize: 1 | 2 | 3 =
+      params.mode === '3v3' ? 3 : params.mode === '2v2' ? 2 : 1;
+    const room: MatchRoom = {
+      id: roomId,
+      code: '1234',
+      creatorUid: params.player.uid,
+      mode: params.mode,
+      format: params.format,
+      isFriendly: params.isFriendly,
+      isPublicQueue: params.isPublicQueue,
+      status: 'waiting',
+      teamSize,
+      teamA: [
+        {
+          uid: params.player.uid,
+          nickname: params.player.nickname,
+          turma: params.player.turma,
+          trophies: params.player.trophies,
+          equippedSkins: params.player.equippedSkins,
+          characterCustomization: params.player.characterCustomization,
+        },
+      ],
+      teamB: [],
+      participantUids: [params.player.uid],
+      currentRound: 1,
+      roundPhase: params.mode === '1v1' ? 'picking' : 'pairing',
+      roundPairings: [],
+      roundStartedAt: Date.now(),
+      teamAScore: 0,
+      teamBScore: 0,
+      roundPicks: {},
+      roundHistory: [],
+      winnerTeam: '',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    localRoomsMemory.set(roomId, room);
+    return room;
+  }
   const matchRef = doc(collection(db, 'matches'));
   const teamSize: 1 | 2 | 3 =
     params.mode === '3v3' ? 3 : params.mode === '2v2' ? 2 : 1;

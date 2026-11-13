@@ -48,6 +48,7 @@ import {
   PlayerProfile,
   RoundSummary,
   TrophyProgressFeedback,
+  Turma,
   TURMAS,
 } from '../types/game';
 import { soundFx } from '../utils/soundFx';
@@ -73,7 +74,7 @@ interface ArenaViewProps {
 function buildBotTeam(
   count: number,
   prefix: string,
-  excludeTurma: string
+  excludeTurma: Turma
 ): MatchParticipant[] {
   const result: MatchParticipant[] = [];
   for (let i = 0; i < count; i++) {
@@ -1001,6 +1002,10 @@ export const ArenaView: React.FC<ArenaViewProps> = ({
           }}
           onThrowStagedMove={() => handleSelectMove(stagedMove)}
           onChooseOpponent={handleChooseOpponent}
+          onFallbackTo2D={() => {
+            soundFx.playSelect();
+            setUse3DTable(false);
+          }}
         />
       ) : (
         <UnoTableStage

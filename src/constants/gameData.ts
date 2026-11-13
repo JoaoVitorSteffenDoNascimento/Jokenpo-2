@@ -13,6 +13,8 @@ import skinJegueReiImg from '../assets/images/skin_jegue_rei_lendario_1794511393
 import skinPapelArcanoImg from '../assets/images/skin_papel_pergaminho_arcano_1794511393993.jpg';
 
 import {
+  ArenaTableThemeId,
+  CardAuraId,
   CharacterArchetypeId,
   CharacterCustomization,
   CharacterEyewearId,
@@ -27,6 +29,7 @@ import {
   MoveId,
   SkinDefinition,
   TrophyMilestone,
+  VictoryEmoteId,
 } from '../types/game';
 
 export interface MoveMeta {
@@ -274,6 +277,7 @@ export const ELO_TIERS: EloTier[] = [
 ];
 
 export const TROPHY_ROAD_MILESTONES: TrophyMilestone[] = [
+  { id: 'ms_250', trophies: 250, eloName: 'Novato II', coins: 80 },
   { id: 'ms_500', trophies: 500, eloName: 'Bixo', coins: 100 },
   { id: 'ms_1000', trophies: 1000, eloName: 'Segundoanista', coins: 120, skinId: 'papel_prova_surpresa' },
   { id: 'ms_1500', trophies: 1500, eloName: 'Terceiranista', coins: 150 },
@@ -286,6 +290,8 @@ export const TROPHY_ROAD_MILESTONES: TrophyMilestone[] = [
   { id: 'ms_8000', trophies: 8000, eloName: 'Global', coins: 350, skinId: 'tesoura_dourada' },
   { id: 'ms_10000', trophies: 10000, eloName: 'Pro (Temporada)', coins: 450, skinId: 'jegue_rei' },
 ];
+
+export const TROPHY_MILESTONES = TROPHY_ROAD_MILESTONES;
 
 export function getCurrentSeasonMonthKey(): string {
   const now = new Date();
@@ -804,6 +810,9 @@ export const DEFAULT_CHARACTER_CUSTOMIZATION: CharacterCustomization = {
   outfitId: 'couro_saloon',
   propId: 'charuto_chefe',
   gunSkinId: 'aco_azulado',
+  tableThemeId: 'saloon_mogno',
+  cardAuraId: 'chama_real',
+  victoryEmoteId: 'saudacao_real',
 };
 
 export const CHARACTER_ARCHETYPES: {
@@ -985,6 +994,303 @@ export const CHARACTER_GUN_SKINS: {
   },
 ];
 
+export const ARENA_TABLE_THEMES: {
+  id: ArenaTableThemeId;
+  name: string;
+  subtitle: string;
+  rimHex: number;
+  feltHex: number;
+  ringHex: number;
+  fogHex: number;
+  accentCss: string;
+}[] = [
+  {
+    id: 'saloon_mogno',
+    name: 'Saloon Mogno Imperial',
+    subtitle: 'Mesa clássica entalhada em mogno com anel de esmeralda e brasas',
+    rimHex: 0x4a1d0d,
+    feltHex: 0x2c1209,
+    ringHex: 0x10b981,
+    fogHex: 0x120806,
+    accentCss: '#F59E0B',
+  },
+  {
+    id: 'cyber_neon',
+    name: 'Cyber-Grid INF Neon',
+    subtitle: 'Arena holográfica de fibra de carbono com circuitos ciano e plasma',
+    rimHex: 0x0f172a,
+    feltHex: 0x091326,
+    ringHex: 0x06b6d4,
+    fogHex: 0x050b16,
+    accentCss: '#22D3EE',
+  },
+  {
+    id: 'obsidiana_imperial',
+    name: 'Cripta Obsidiana & Magma',
+    subtitle: 'Rocha vulcânica negra polida com runas de magma carmesim e violeta',
+    rimHex: 0x181024,
+    feltHex: 0x12091c,
+    ringHex: 0xf43f5e,
+    fogHex: 0x0c0612,
+    accentCss: '#FB7185',
+  },
+  {
+    id: 'esmeralda_etm',
+    name: 'Cassino Real Esmeralda',
+    subtitle: 'Feltro verde esmeralda de luxo com filigrana de ouro maciço 24K',
+    rimHex: 0x3b1a0e,
+    feltHex: 0x063729,
+    ringHex: 0xfbbf24,
+    fogHex: 0x071410,
+    accentCss: '#10B981',
+  },
+  {
+    id: 'saloon_rustico',
+    name: 'Saloon Rústico Clássico',
+    subtitle: 'Carvalho envelhecido, ferraduras de ferro forjado e lanterna âmbar',
+    rimHex: 0x3d2314,
+    feltHex: 0x24140b,
+    ringHex: 0xd97706,
+    fogHex: 0x0f0905,
+    accentCss: '#D97706',
+  },
+  {
+    id: 'cyber_neon_vip',
+    name: 'Cyber Neon VIP',
+    subtitle: 'Fibra de carbono preta com circuitos magenta/ciano pulsantes',
+    rimHex: 0x180b2b,
+    feltHex: 0x0d061a,
+    ringHex: 0xe879f9,
+    fogHex: 0x080312,
+    accentCss: '#E879F9',
+  },
+  {
+    id: 'ouro_cassino',
+    name: 'Ouro Real de Cassino',
+    subtitle: 'Feltro veludo carmesim de luxo e filigrana de ouro maciço 24K',
+    rimHex: 0x450a0a,
+    feltHex: 0x350808,
+    ringHex: 0xfacc15,
+    fogHex: 0x140404,
+    accentCss: '#FACC15',
+  },
+  {
+    id: 'templo_cosmico',
+    name: 'Templo Cósmico',
+    subtitle: 'Mármore sideral azul-marinho com runas astrais bioluminescentes',
+    rimHex: 0x1e1b4b,
+    feltHex: 0x0f172a,
+    ringHex: 0x818cf8,
+    fogHex: 0x070a14,
+    accentCss: '#818CF8',
+  },
+];
+
+export const CARD_AURAS: {
+  id: CardAuraId;
+  name: string;
+  badge: string;
+  colorHex: number;
+  cssColor: string;
+}[] = [
+  {
+    id: 'chama_real',
+    name: 'Chama Imperial',
+    badge: 'Fogo & Ouro',
+    colorHex: 0xf59e0b,
+    cssColor: '#F59E0B',
+  },
+  {
+    id: 'plasma_ciano',
+    name: 'Pulso de Plasma',
+    badge: 'Cyber INF',
+    colorHex: 0x06b6d4,
+    cssColor: '#22D3EE',
+  },
+  {
+    id: 'relampago_ouro',
+    name: 'Tempestade Esmeralda',
+    badge: 'Energia ETM',
+    colorHex: 0x10b981,
+    cssColor: '#10B981',
+  },
+  {
+    id: 'sombra_arcana',
+    name: 'Névoa Carmesim',
+    badge: 'Lendário',
+    colorHex: 0xf43f5e,
+    cssColor: '#FB7185',
+  },
+  {
+    id: 'chamas_carmesim',
+    name: 'Chamas Carmesim',
+    badge: 'Inferno Vulcânico',
+    colorHex: 0xef4444,
+    cssColor: '#EF4444',
+  },
+  {
+    id: 'relampago_eletrico',
+    name: 'Relâmpago Elétrico',
+    badge: 'Alta Tensão 24K',
+    colorHex: 0xfacc15,
+    cssColor: '#FACC15',
+  },
+  {
+    id: 'void_cosmico',
+    name: 'Void Cósmico',
+    badge: 'Abismo Astral',
+    colorHex: 0xa855f7,
+    cssColor: '#A855F7',
+  },
+  {
+    id: 'glitch_cyberpunk',
+    name: 'Glitch Holográfico',
+    badge: 'Matrix INF',
+    colorHex: 0x10b981,
+    cssColor: '#10B981',
+  },
+];
+
+export const VICTORY_EMOTES: {
+  id: VictoryEmoteId;
+  name: string;
+  icon: string;
+  phrase: string;
+}[] = [
+  {
+    id: 'saudacao_real',
+    name: 'Rei da Mesa',
+    icon: '👑',
+    phrase: 'Respeita o Rei da Mesa!',
+  },
+  {
+    id: 'giro_revolver',
+    name: 'Na Mira da Parafal',
+    icon: '🎯',
+    phrase: 'Leitura fria, HS limpo!',
+  },
+  {
+    id: 'rugido_chefe',
+    name: 'Blefe Implacável',
+    icon: '🔥',
+    phrase: 'Caiu no blefe do Saloon!',
+  },
+  {
+    id: 'holograma_gg',
+    name: 'GG Calculado',
+    icon: '⚡',
+    phrase: 'Tudo calculado no hexágono!',
+  },
+  {
+    id: 'palmas_taticas',
+    name: 'Aplauso Estratégico',
+    icon: '👏',
+    phrase: 'Bela jogada, mas foi prevista!',
+  },
+  {
+    id: 'fogo_intenso',
+    name: 'Mesa em Chamas',
+    icon: '🔥',
+    phrase: 'A pressão aqui derrete ferro!',
+  },
+  {
+    id: 'caveira_fatal',
+    name: 'Xeque-Mate do Hexágono',
+    icon: '💀',
+    phrase: 'Um erro aqui é fatal!',
+  },
+  {
+    id: 'blefe_absoluto',
+    name: 'Mestre do Blefe',
+    icon: '🃏',
+    phrase: 'Quem tem coragem bate na mesa!',
+  },
+  {
+    id: 'oculos_mito',
+    name: 'Cálculo de Pro Player',
+    icon: '😎',
+    phrase: 'Zero sorte, pura frieza!',
+  },
+  {
+    id: 'espanto_total',
+    name: 'Reviravolta Épica',
+    icon: '😱',
+    phrase: 'Que duelo inacreditável!',
+  },
+];
+
+export const CHARACTER_PRESETS: {
+  id: string;
+  name: string;
+  badge: string;
+  config: CharacterCustomization;
+}[] = [
+  {
+    id: 'rei_saloon',
+    name: 'Dom Jegue Rei 24K',
+    badge: 'Realeza',
+    config: {
+      archetypeId: 'dom_jegue',
+      hatId: 'coroa_imperial',
+      eyewearId: 'monoculo_ouro',
+      outfitId: 'gala_imperial',
+      propId: 'charuto_chefe',
+      gunSkinId: 'ouro_imperial',
+      tableThemeId: 'saloon_mogno',
+      cardAuraId: 'chama_real',
+      victoryEmoteId: 'saudacao_real',
+    },
+  },
+  {
+    id: 'cyber_inf',
+    name: 'Mecha-Camaleão INF',
+    badge: 'Cyberpunk',
+    config: {
+      archetypeId: 'mecha_camaleao',
+      hatId: 'halo_cyber',
+      eyewearId: 'visor_mecha',
+      outfitId: 'cyber_neon',
+      propId: 'mascara_oni',
+      gunSkinId: 'cyber_plasma',
+      tableThemeId: 'cyber_neon',
+      cardAuraId: 'plasma_ciano',
+      victoryEmoteId: 'holograma_gg',
+    },
+  },
+  {
+    id: 'chefe_obsidiana',
+    name: 'Minotauro Carmesim',
+    badge: 'Intimidador',
+    config: {
+      archetypeId: 'minotauro_chef',
+      hatId: 'chapeu_cauboi',
+      eyewearId: 'olhos_chama',
+      outfitId: 'obsidiana_noite',
+      propId: 'charuto_chefe',
+      gunSkinId: 'carmesim_furia',
+      tableThemeId: 'obsidiana_imperial',
+      cardAuraId: 'sombra_arcana',
+      victoryEmoteId: 'rugido_chefe',
+    },
+  },
+  {
+    id: 'dama_cassino',
+    name: 'Dama Raposa de Gala',
+    badge: 'Elegância',
+    config: {
+      archetypeId: 'raposa_dama',
+      hatId: 'cartola_magnata',
+      eyewearId: 'oculos_escuros',
+      outfitId: 'esmeralda_etm',
+      propId: 'rosa_dourada',
+      gunSkinId: 'ouro_imperial',
+      tableThemeId: 'esmeralda_etm',
+      cardAuraId: 'relampago_ouro',
+      victoryEmoteId: 'giro_revolver',
+    },
+  },
+];
+
 export function resolveCharacterCustomization(
   custom?: Partial<CharacterCustomization> | null,
   fallbackIndex = 0
@@ -996,6 +1302,10 @@ export function resolveCharacterCustomization(
   const outfit = CHARACTER_OUTFITS[fallbackIndex % CHARACTER_OUTFITS.length].id;
   const prop = CHARACTER_PROPS[fallbackIndex % CHARACTER_PROPS.length].id;
   const gun = CHARACTER_GUN_SKINS[fallbackIndex % CHARACTER_GUN_SKINS.length].id;
+  const table =
+    ARENA_TABLE_THEMES[fallbackIndex % ARENA_TABLE_THEMES.length].id;
+  const aura = CARD_AURAS[fallbackIndex % CARD_AURAS.length].id;
+  const emote = VICTORY_EMOTES[fallbackIndex % VICTORY_EMOTES.length].id;
 
   return {
     archetypeId: custom?.archetypeId ?? arch,
@@ -1004,6 +1314,9 @@ export function resolveCharacterCustomization(
     outfitId: custom?.outfitId ?? outfit,
     propId: custom?.propId ?? prop,
     gunSkinId: custom?.gunSkinId ?? gun,
+    tableThemeId: custom?.tableThemeId ?? table,
+    cardAuraId: custom?.cardAuraId ?? aura,
+    victoryEmoteId: custom?.victoryEmoteId ?? emote,
   };
 }
 
